@@ -8,6 +8,7 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAME_SERVER: ${{ github.repository }}-server
   IMAGE_NAME_WEB: ${{ github.repository }}-web
+  PORT: 3001
 
 jobs:
   build-and-push:
@@ -42,6 +43,8 @@ jobs:
           file: apps/web/Dockerfile
           push: true
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_WEB }}:latest
+          build-args: |
+            VITE_SERVER_URL=${{ secrets.VITE_SERVER_URL }}
 
   deploy:
     needs: build-and-push
@@ -50,10 +53,15 @@ jobs:
       - name: Deploy to VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
+          host: ${{ secrets.REMOTE_IP }}
+          username: deployer
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
             cd ~/pictobattle
+            echo "PORT=${{ env.PORT }}" > .env
+            echo "CLIENT_URL=${{ secrets.CLIENT_URL }}" >> .env
+            echo "VITE_SERVER_URL=${{ secrets.VITE_SERVER_URL }}" >> .env
+            echo "SERVER_IMAGE=${{ env.REGISTRY }}/${{ env.IMAGE_NAME_SERVER }}:latest" >> .env
+            echo "WEB_IMAGE=${{ env.REGISTRY }}/${{ env.IMAGE_NAME_WEB }}:latest" >> .env
             docker compose pull
             docker compose up -d
