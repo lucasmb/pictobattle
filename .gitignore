@@ -27,6 +27,7 @@ packages/shared/*.d.ts
 packages/shared/*.d.ts.map
 
 # Editor directories
+.agent/
 .vscode/
 .idea/
 *.swp
