@@ -219,7 +219,7 @@ export const useGameStore = create<GameState>((set, get) => ({
             set({ messages: [], strokes: [] });
         });
 
-        socket.on('player_ready' as any, ({ playerId, isReady }: { playerId: string, isReady: boolean }) => {
+        socket.on('player_ready' as any, () => {
             // Handled via room_updated usually, but good for specific notifications if needed
         });
 
