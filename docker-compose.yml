@@ -1,0 +1,54 @@
+services:
+  server:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    container_name: pictobattle-server
+    restart: unless-stopped
+    networks:
+      - caddy-network
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - CLIENT_URL=${CLIENT_URL:-http://localhost}
+    # Expose port if needed to be opened in UFW, though Caddy can proxy via network
+    ports:
+      - "3001:3001"
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        - VITE_SERVER_URL=${VITE_SERVER_URL:-http://localhost:3001}
+    container_name: pictobattle-web
+    restart: unless-stopped
+    networks:
+      - caddy-network
+    volumes:
+      - pictobattle_web_static:/usr/share/caddy
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 256M
+
+networks:
+  caddy-network:
+    external: true
+
+volumes:
+  pictobattle_web_static:
+    name: pictobattle_web_static

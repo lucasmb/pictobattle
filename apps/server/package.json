@@ -1,0 +1,28 @@
+{
+  "name": "server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "node --watch --experimental-transform-types src/index.ts",
+    "build": "tsc",
+    "start": "node --experimental-transform-types src/index.ts",
+    "test": "vitest"
+  },
+  "dependencies": {
+    "@pictobattle/shared": "workspace:*",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "socket.io": "^4.8.1",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.10.10",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.4"
+  }
+}
