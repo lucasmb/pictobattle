@@ -18,6 +18,9 @@ RUN pnpm install --frozen-lockfile
 # Copy source code
 COPY . .
 
+# Deploy the server for production (isolates the package and its production dependencies)
+RUN pnpm --filter server --prod deploy /app/out
+
 # Production stage
 FROM node:24-alpine AS runner
 
@@ -26,17 +29,13 @@ WORKDIR /app
 # Set production environment
 ENV NODE_ENV=production
 
-# Copy necessary files from builder with correct ownership
-COPY --from=builder --chown=node:node /app/package.json ./
-COPY --from=builder --chown=node:node /app/pnpm-lock.yaml ./
-COPY --from=builder --chown=node:node /app/apps/server/package.json ./apps/server/
-COPY --from=builder --chown=node:node /app/apps/server/src ./apps/server/src
-COPY --from=builder --chown=node:node /app/packages/shared ./packages/shared
-COPY --from=builder --chown=node:node /app/node_modules ./node_modules
+# Copy the deployed production bundle
+COPY --from=builder --chown=node:node /app/out ./
 
 # Use non-root user
 USER node
 
-EXPOSE 3001
+EXPOSE 4000
 
-CMD ["node", "--experimental-transform-types", "apps/server/src/index.ts"]
+# Start from the root of the isolated bundle
+CMD ["node", "--experimental-transform-types", "src/index.ts"]
