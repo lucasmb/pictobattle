@@ -8,7 +8,7 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAME_SERVER: ${{ github.repository }}-server
   IMAGE_NAME_WEB: ${{ github.repository }}-web
-  PORT: 3001
+  PORT: 4000
 
 jobs:
   build-and-push:
@@ -53,8 +53,8 @@ jobs:
       - name: Deploy to VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.REMOTE_IP }}
-          username: deployer
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
             cd ~/pictobattle
