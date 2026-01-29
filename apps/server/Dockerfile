@@ -18,7 +18,10 @@ RUN pnpm install --frozen-lockfile
 # Copy source code
 COPY . .
 
-# Deploy the server for production (isolates the package and its production dependencies)
+# Build the shared package (Transpiling to JS avoids type-stripping errors in node_modules)
+RUN pnpm --filter @pictobattle/shared build
+
+# Deploy the server for production
 RUN pnpm --filter server --prod --legacy deploy /app/out
 
 # Production stage
@@ -37,5 +40,6 @@ USER node
 
 EXPOSE 4000
 
-# Start from the root of the isolated bundle
+# Run the server with type-stripping for the application code
+# Shared package dependencies are now pre-built JS in node_modules
 CMD ["node", "--experimental-transform-types", "src/index.ts"]

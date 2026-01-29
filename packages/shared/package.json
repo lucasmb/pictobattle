@@ -3,11 +3,11 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "main": "./index.ts",
+  "main": "./dist/index.js",
   "exports": {
-    ".": "./index.ts"
+    ".": "./dist/index.js"
   },
-  "types": "./index.ts",
+  "types": "./dist/index.d.ts",
   "scripts": {
     "build": "tsc"
   }
