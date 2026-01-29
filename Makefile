@@ -9,7 +9,13 @@ dev-web:
 dev-server:
 	pnpm --filter server dev
 
-dev:
+dev-infra:
+	docker compose -f docker-compose.dev.yml up -d
+
+dev-infra-down:
+	docker compose -f docker-compose.dev.yml down
+
+dev: dev-infra
 	pnpm --filter server dev & pnpm --filter web dev
 
 test:
