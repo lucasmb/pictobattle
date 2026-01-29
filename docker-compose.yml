@@ -12,6 +12,7 @@ services:
       - NODE_ENV=production
       - PORT=4000
       - CLIENT_URL=${CLIENT_URL:-http://localhost}
+      - REDIS_HOST=redis
     # Expose port if needed to be opened in UFW, though Caddy can proxy via network
     ports:
       - "4000:4000"
@@ -24,6 +25,19 @@ services:
           memory: 512M
         reservations:
           cpus: '0.25'
+          memory: 256M
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:alpine
+    container_name: pictobattle-redis
+    restart: unless-stopped
+    networks:
+      - caddy-network
+    deploy:
+      resources:
+        limits:
           memory: 256M
 
   web:
