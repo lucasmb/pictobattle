@@ -19,7 +19,7 @@ RUN pnpm install --frozen-lockfile
 COPY . .
 
 # Deploy the server for production (isolates the package and its production dependencies)
-RUN pnpm --filter server --prod deploy /app/out
+RUN pnpm --filter server --prod --legacy deploy /app/out
 
 # Production stage
 FROM node:24-alpine AS runner
