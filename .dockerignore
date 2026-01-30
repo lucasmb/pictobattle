@@ -4,8 +4,8 @@ packages/*/node_modules
 apps/*/dist
 packages/*/dist
 .git
-.env
-.env.local
+**/.env
+**/.env.local
 .vscode
 dist
 pnpm-debug.log

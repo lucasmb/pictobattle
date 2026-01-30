@@ -84,7 +84,10 @@ export const useGameStore = create<GameState>((set, get) => ({
 
     // Connect to server
     connect: () => {
-        const socket = io(import.meta.env.VITE_SERVER_URL || 'http://localhost:3001', {
+        const serverUrl = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001';
+        console.log('Connecting to server at:', serverUrl);
+
+        const socket = io(serverUrl, {
             transports: ['websocket'],
         });
 
