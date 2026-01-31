@@ -8,6 +8,10 @@ export default defineConfig({
             '@': fileURLToPath(new URL('./src', import.meta.url)),
         },
     },
+    ssr: {
+        // Bundle ALL npm dependencies into the output (required for distroless images)
+        noExternal: true,
+    },
     build: {
         ssr: true,
         lib: {
@@ -16,18 +20,18 @@ export default defineConfig({
             fileName: 'index',
         },
         rollupOptions: {
+            // Only exclude Node.js built-in modules
             external: [
                 ...builtinModules,
                 ...builtinModules.map((m: string) => `node:${m}`),
-                'fsevents',
             ],
             output: {
                 entryFileNames: '[name].js',
+                inlineDynamicImports: true,
             },
         },
         outDir: 'dist',
         emptyOutDir: true,
         minify: true,
-
     },
 });

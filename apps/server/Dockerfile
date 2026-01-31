@@ -20,7 +20,7 @@ COPY . .
 # Build the shared package
 RUN pnpm --filter @pictobattle/shared build
 
-# Bundle the server using Vite
+# Bundle the server using Vite - single file with all deps bundled
 RUN pnpm --filter server build
 
 # Production stage - distroless for minimal size and security
