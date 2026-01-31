@@ -1,7 +1,13 @@
 import { defineConfig } from 'vite';
 import { builtinModules } from 'module';
+import { fileURLToPath } from 'url';
 
 export default defineConfig({
+    resolve: {
+        alias: {
+            '@': fileURLToPath(new URL('./src', import.meta.url)),
+        },
+    },
     build: {
         ssr: true,
         lib: {
@@ -22,10 +28,6 @@ export default defineConfig({
         outDir: 'dist',
         emptyOutDir: true,
         minify: true,
-    },
-    resolve: {
-        alias: {
-            '@pictobattle/shared': '../../packages/shared',
-        },
+
     },
 });

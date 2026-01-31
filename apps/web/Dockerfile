@@ -18,6 +18,9 @@ RUN pnpm install --frozen-lockfile
 # Copy source code
 COPY . .
 
+# Build shared package first (required by web app)
+RUN pnpm --filter @pictobattle/shared build
+
 # Build with environment variables
 ARG VITE_SERVER_URL
 ENV VITE_SERVER_URL=$VITE_SERVER_URL
