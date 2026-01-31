@@ -29,6 +29,7 @@ export interface Message {
     content: string;
     timestamp: number;
     isCorrectGuess?: boolean;
+    isCloseGuess?: boolean;
 }
 
 export interface Room {
@@ -96,6 +97,7 @@ export enum SocketEvents {
 
     // Drawing
     DRAW = 'draw',
+    DRAW_SEGMENT = 'draw_segment',
     DRAW_UPDATE = 'draw_update',
     CLEAR_CANVAS = 'clear_canvas',
     CANVAS_CLEARED = 'canvas_cleared',
@@ -104,6 +106,7 @@ export enum SocketEvents {
     SEND_MESSAGE = 'send_message',
     NEW_MESSAGE = 'new_message',
     CORRECT_GUESS = 'correct_guess',
+    CLOSE_GUESS = 'close_guess',
 
     // Errors
     ERROR = 'error',

@@ -12,7 +12,6 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
-      '@pictobattle/shared': fileURLToPath(new URL('../../packages/shared', import.meta.url)),
     },
   },
 })

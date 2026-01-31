@@ -11,10 +11,12 @@ export function PlayerSetup({ onComplete }: PlayerSetupProps) {
     const [selectedAvatar, setSelectedAvatar] = useState(AVATARS[0]);
     const { setPlayerInfo } = useGameStore();
 
-    const handleSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        if (name.trim()) {
-            setPlayerInfo(name.trim(), selectedAvatar);
+    const handleAction = (formData: FormData) => {
+        const playerName = formData.get('playerName') as string;
+        const avatar = formData.get('avatar') as string;
+
+        if (playerName.trim()) {
+            setPlayerInfo(playerName.trim(), avatar);
             onComplete();
         }
     };
@@ -24,19 +26,21 @@ export function PlayerSetup({ onComplete }: PlayerSetupProps) {
             <div className="card w-full max-w-md bg-base-100 shadow-2xl">
                 <div className="card-body">
                     <h1 className="text-4xl font-bold text-center mb-2 bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
-                        PictoParty
+                        PictoBattle
                     </h1>
                     <p className="text-center text-base-content/70 mb-6">
                         Join the fun! Draw, guess, and win!
                     </p>
 
-                    <form onSubmit={handleSubmit} className="space-y-6">
+                    <form action={handleAction} className="space-y-6">
+                        <input type="hidden" name="avatar" value={selectedAvatar} />
                         <div className="form-control">
                             <label className="label">
                                 <span className="label-text font-semibold">Your Name</span>
                             </label>
                             <input
                                 type="text"
+                                name="playerName"
                                 placeholder="Enter your name"
                                 className="input input-bordered input-primary w-full"
                                 value={name}

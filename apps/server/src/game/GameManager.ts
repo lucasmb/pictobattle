@@ -15,7 +15,7 @@ import type {
     SendMessagePayload,
     Message,
 } from '@pictobattle/shared';
-import { generateRoomId, generatePlayerId, generateMessageId, selectRandomWord, selectRandomPlayer } from '../utils/helpers.ts';
+import { generateRoomId, generatePlayerId, generateMessageId, selectRandomWord, selectRandomPlayer, getLevenshteinDistance } from '../utils/helpers.ts';
 
 export class GameManager {
     private redis: Redis;
@@ -39,6 +39,7 @@ export class GameManager {
             socket.on(SocketEvents.START_GAME, () => this.startGame(socket));
             socket.on(SocketEvents.SELECT_WORD, (payload) => this.selectWord(socket, payload));
             socket.on(SocketEvents.DRAW, (payload) => this.handleDraw(socket, payload));
+            socket.on(SocketEvents.DRAW_SEGMENT, (payload) => this.handleDrawSegment(socket, payload));
             socket.on(SocketEvents.CLEAR_CANVAS, () => this.clearCanvas(socket));
             socket.on(SocketEvents.SEND_MESSAGE, (payload) => this.handleMessage(socket, payload));
             socket.on(SocketEvents.RESTART_GAME, () => this.restartGame(socket));
@@ -404,6 +405,12 @@ export class GameManager {
         socket.to(payload.roomId).emit(SocketEvents.DRAW_UPDATE, { stroke: payload.stroke });
     }
 
+    async handleDrawSegment(socket: Socket, payload: DrawPayload) {
+        // No need to fetch room/player for every segment to save performance, 
+        // just broadcast. Security can be added later if needed.
+        socket.to(payload.roomId).emit(SocketEvents.DRAW_UPDATE, { stroke: payload.stroke });
+    }
+
     async clearCanvas(socket: Socket) {
         const roomId = this.playerRooms.get(socket.id);
         if (!roomId) return;
@@ -464,27 +471,35 @@ export class GameManager {
                 const currentRevealed = new Set(room.revealedLetters[player.id]);
                 let newReveal = false;
 
+                const distance = getLevenshteinDistance(targetWord, guessWord);
+                const isClose = distance >= 1 && distance <= 2;
+
+                if (isClose) {
+                    console.log(`Close guess from ${player.name}: ${guessWord} (target: ${targetWord})`);
+                    this.io.to(socket.id).emit(SocketEvents.CLOSE_GUESS, { message: 'You are very close!' });
+                }
+
                 const maxLength = Math.min(targetWord.length, guessWord.length);
                 let remainingHidden = targetWord.length - currentRevealed.size;
 
-                if (remainingHidden > 1) {
-                    for (let i = 0; i < maxLength; i++) {
-                        if (targetWord[i] === guessWord[i] && !currentRevealed.has(i)) {
-                            if (remainingHidden > 1) {
-                                currentRevealed.add(i);
-                                newReveal = true;
-                                remainingHidden--;
-                            }
+                for (let i = 0; i < maxLength; i++) {
+                    if (targetWord[i] === guessWord[i] && !currentRevealed.has(i)) {
+                        // Reveal letter if it matches and we have more than 1 hidden (don't reveal last letter)
+                        if (remainingHidden > 1) {
+                            currentRevealed.add(i);
+                            newReveal = true;
+                            remainingHidden--;
                         }
                     }
                 }
 
-                if (newReveal) {
+                if (newReveal || isClose) {
                     room.revealedLetters[player.id] = Array.from(currentRevealed);
                     let hintWord = '';
                     for (let i = 0; i < targetWord.length; i++) {
                         hintWord += (currentRevealed.has(i) || targetWord[i] === ' ' || targetWord[i] === '-') ? room.currentWord[i] : '_';
                     }
+                    console.log(`Sending hint update to ${player.name}: ${hintWord}`);
                     this.io.to(socket.id).emit(SocketEvents.WORD_HINT_UPDATE, {
                         playerId: player.id,
                         revealedPositions: room.revealedLetters[player.id],

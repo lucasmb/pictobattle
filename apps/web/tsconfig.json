@@ -27,9 +27,6 @@
         "paths": {
             "@/*": [
                 "./src/*"
-            ],
-            "@pictobattle/shared": [
-                "../../packages/shared"
             ]
         }
     },

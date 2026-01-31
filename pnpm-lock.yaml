@@ -51,12 +51,18 @@ importers:
       typescript:
         specifier: ^5.7.3
         version: 5.9.3
+      vite:
+        specifier: ^6.0.11
+        version: 6.4.1(@types/node@22.19.7)(jiti@2.6.1)(lightningcss@1.30.2)
       vitest:
         specifier: ^3.0.4
         version: 3.2.4(@types/node@22.19.7)(jiti@2.6.1)(lightningcss@1.30.2)
 
   apps/web:
     dependencies:
+      '@pictobattle/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
