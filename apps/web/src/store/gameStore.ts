@@ -169,7 +169,9 @@ export const useGameStore = create<GameState>((set, get) => ({
                         playerName: 'System',
                         content: `Round ended! The word was: ${word}`,
                         timestamp: Date.now(),
-                    },
+                        isCorrectGuess: false,
+                        isCloseGuess: false,
+                    } as Message,
                 ],
             }));
         });
@@ -203,7 +205,8 @@ export const useGameStore = create<GameState>((set, get) => ({
                         content: `${playerName} guessed correctly! +${points} points${isFirstGuess ? ' (First guess bonus!)' : ''}`,
                         timestamp: Date.now(),
                         isCorrectGuess: true,
-                    },
+                        isCloseGuess: false,
+                    } as Message,
                 ],
             }));
         });
@@ -223,10 +226,25 @@ export const useGameStore = create<GameState>((set, get) => ({
                         playerName: 'System',
                         content: message,
                         timestamp: Date.now(),
+                        isCorrectGuess: false,
                         isCloseGuess: true,
-                    },
+                    } as Message,
                 ],
             }));
+        });
+
+        socket.on(SocketEvents.WORD_HINT_UPDATE, ({ revealedPositions }: { revealedPositions: number[] }) => {
+            const { room, currentPlayerId } = get();
+            if (!room || !currentPlayerId) return;
+
+            const updatedRoom = {
+                ...room,
+                revealedLetters: {
+                    ...room.revealedLetters,
+                    [currentPlayerId]: revealedPositions
+                }
+            };
+            set({ room: updatedRoom });
         });
 
         // New feature events

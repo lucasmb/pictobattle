@@ -475,6 +475,7 @@ export class GameManager {
                 const isClose = distance >= 1 && distance <= 2;
 
                 if (isClose) {
+                    console.log(`Close guess from ${player.name}: ${guessWord} (target: ${targetWord})`);
                     this.io.to(socket.id).emit(SocketEvents.CLOSE_GUESS, { message: 'You are very close!' });
                 }
 
@@ -483,6 +484,7 @@ export class GameManager {
 
                 for (let i = 0; i < maxLength; i++) {
                     if (targetWord[i] === guessWord[i] && !currentRevealed.has(i)) {
+                        // Reveal letter if it matches and we have more than 1 hidden (don't reveal last letter)
                         if (remainingHidden > 1) {
                             currentRevealed.add(i);
                             newReveal = true;
@@ -491,12 +493,13 @@ export class GameManager {
                     }
                 }
 
-                if (newReveal) {
+                if (newReveal || isClose) {
                     room.revealedLetters[player.id] = Array.from(currentRevealed);
                     let hintWord = '';
                     for (let i = 0; i < targetWord.length; i++) {
                         hintWord += (currentRevealed.has(i) || targetWord[i] === ' ' || targetWord[i] === '-') ? room.currentWord[i] : '_';
                     }
+                    console.log(`Sending hint update to ${player.name}: ${hintWord}`);
                     this.io.to(socket.id).emit(SocketEvents.WORD_HINT_UPDATE, {
                         playerId: player.id,
                         revealedPositions: room.revealedLetters[player.id],

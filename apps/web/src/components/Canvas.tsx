@@ -59,7 +59,7 @@ export function Canvas() {
         }
     }, [strokes]);
 
-    const getCoordinates = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const getCoordinates = (clientX: number, clientY: number) => {
         const canvas = canvasRef.current;
         if (!canvas) return { x: 0, y: 0 };
 
@@ -68,16 +68,16 @@ export function Canvas() {
         const scaleY = canvas.height / rect.height;
 
         return {
-            x: (e.clientX - rect.left) * scaleX,
-            y: (e.clientY - rect.top) * scaleY,
+            x: (clientX - rect.left) * scaleX,
+            y: (clientY - rect.top) * scaleY,
         };
     };
 
-    const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const startDrawing = (clientX: number, clientY: number) => {
         if (!canDraw) return;
 
         setIsDrawing(true);
-        const coords = getCoordinates(e);
+        const coords = getCoordinates(clientX, clientY);
         const point: DrawPoint = {
             ...coords,
             color: currentColor,
@@ -87,10 +87,10 @@ export function Canvas() {
         lastPointRef.current = point;
     };
 
-    const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const moveDrawing = (clientX: number, clientY: number) => {
         if (!isDrawing || !canDraw) return;
 
-        const coords = getCoordinates(e);
+        const coords = getCoordinates(clientX, clientY);
 
         // Throttling: only record if distance > 2px
         if (lastPointRef.current) {
@@ -130,11 +130,35 @@ export function Canvas() {
         lastPointRef.current = point;
     };
 
-    const handleMouseUp = () => {
-        if (!isDrawing || !canDraw) return;
-
+    const stopDrawing = () => {
         setIsDrawing(false);
         lastPointRef.current = null;
+    };
+
+    const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+        startDrawing(e.clientX, e.clientY);
+    };
+
+    const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+        moveDrawing(e.clientX, e.clientY);
+    };
+
+    const handleMouseUp = () => {
+        stopDrawing();
+    };
+
+    const handleTouchStart = (e: React.TouchEvent<HTMLCanvasElement>) => {
+        const touch = e.touches[0];
+        startDrawing(touch.clientX, touch.clientY);
+    };
+
+    const handleTouchMove = (e: React.TouchEvent<HTMLCanvasElement>) => {
+        const touch = e.touches[0];
+        moveDrawing(touch.clientX, touch.clientY);
+    };
+
+    const handleTouchEnd = () => {
+        stopDrawing();
     };
 
     const handleClearCanvas = () => {
@@ -201,10 +225,14 @@ export function Canvas() {
                         width={CANVAS_CONFIG.width}
                         height={CANVAS_CONFIG.height}
                         className={`border-2 border-base-300 rounded max-w-full h-auto ${canDraw ? 'cursor-crosshair' : 'cursor-default'}`}
+                        style={{ touchAction: 'none' }}
                         onMouseDown={handleMouseDown}
                         onMouseMove={handleMouseMove}
                         onMouseUp={handleMouseUp}
                         onMouseLeave={handleMouseUp}
+                        onTouchStart={handleTouchStart}
+                        onTouchMove={handleTouchMove}
+                        onTouchEnd={handleTouchEnd}
                     />
                 </div>
 
