@@ -8,9 +8,10 @@ export default defineConfig({
             '@': fileURLToPath(new URL('./src', import.meta.url)),
         },
     },
+    // Bundle most dependencies but externalize socket.io and ws
     ssr: {
-        // Bundle ALL npm dependencies into the output (required for distroless images)
-        noExternal: true,
+        noExternal: /.*/,
+        external: ['socket.io', 'ws', 'engine.io', 'bufferutil', 'utf-8-validate'],
     },
     build: {
         ssr: true,
@@ -20,10 +21,15 @@ export default defineConfig({
             fileName: 'index',
         },
         rollupOptions: {
-            // Only exclude Node.js built-in modules
+            // Exclude Node.js built-in modules and socket.io packages (need real module for ws constructor)
             external: [
                 ...builtinModules,
                 ...builtinModules.map((m: string) => `node:${m}`),
+                'socket.io',
+                'engine.io',
+                'ws',
+                'bufferutil',
+                'utf-8-validate',
             ],
             output: {
                 entryFileNames: '[name].js',
