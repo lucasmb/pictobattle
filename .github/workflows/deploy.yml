@@ -17,6 +17,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+    outputs:
+      package_version: ${{ steps.version.outputs.PACKAGE_VERSION }}
 
     steps:
       - name: Checkout repository
@@ -24,7 +26,10 @@ jobs:
 
       - name: Extract project version
         id: version
-        run: echo "PACKAGE_VERSION=$(node -p "require('./package.json').version")" >> $GITHUB_ENV
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "PACKAGE_VERSION=$VERSION" >> $GITHUB_ENV
+          echo "PACKAGE_VERSION=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Log in to the Container registry
         uses: docker/login-action@v3
@@ -58,6 +63,8 @@ jobs:
   deploy:
     needs: build-and-push
     runs-on: ubuntu-latest
+    env:
+      PACKAGE_VERSION: ${{ needs.build-and-push.outputs.package_version }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
