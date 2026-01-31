@@ -12,6 +12,7 @@ import type {
     SendMessagePayload,
     RoomSummary,
 } from '@pictobattle/shared';
+import { SocketEvents } from '@pictobattle/shared';
 import { playSound } from '../utils/SoundManager';
 
 interface GameState {
@@ -51,6 +52,7 @@ interface GameState {
     startGame: () => void;
     selectWord: (word: string) => void;
     sendDraw: (stroke: DrawStroke) => void;
+    sendDrawSegment: (stroke: DrawStroke) => void;
     clearCanvas: () => void;
     sendMessage: (content: string) => void;
     clearError: () => void;
@@ -71,8 +73,8 @@ export const useGameStore = create<GameState>((set, get) => ({
     rooms: [],
 
     currentPlayerId: null,
-    playerName: '',
-    playerAvatar: '',
+    playerName: localStorage.getItem('playerName') || '',
+    playerAvatar: localStorage.getItem('playerAvatar') || '😀',
     players: [],
     customWords: [],
 
@@ -211,6 +213,22 @@ export const useGameStore = create<GameState>((set, get) => ({
             set({ error: message, isLoading: false });
         });
 
+        socket.on(SocketEvents.CLOSE_GUESS, ({ message }: { message: string }) => {
+            set((state) => ({
+                messages: [
+                    ...state.messages,
+                    {
+                        id: `system_${Date.now()}`,
+                        playerId: 'system',
+                        playerName: 'System',
+                        content: message,
+                        timestamp: Date.now(),
+                        isCloseGuess: true,
+                    },
+                ],
+            }));
+        });
+
         // New feature events
         socket.on('player_kicked' as any, ({ message }: { message: string }) => {
             set({ error: message, room: null, roomId: null });
@@ -241,6 +259,8 @@ export const useGameStore = create<GameState>((set, get) => ({
 
     // Set player info
     setPlayerInfo: (name: string, avatar: string) => {
+        localStorage.setItem('playerName', name);
+        localStorage.setItem('playerAvatar', avatar);
         set({ playerName: name, playerAvatar: avatar });
     },
 
@@ -306,7 +326,16 @@ export const useGameStore = create<GameState>((set, get) => ({
 
         set((state) => ({ strokes: [...state.strokes, stroke] }));
         const payload: DrawPayload = { roomId, stroke };
-        socket.emit('draw' as any, payload);
+        socket.emit(SocketEvents.DRAW, payload);
+    },
+
+    // Send draw segment (real-time)
+    sendDrawSegment: (stroke: DrawStroke) => {
+        const { socket, roomId } = get();
+        if (!socket || !roomId) return;
+
+        const payload: DrawPayload = { roomId, stroke };
+        socket.emit(SocketEvents.DRAW_SEGMENT, payload);
     },
 
     // Clear canvas

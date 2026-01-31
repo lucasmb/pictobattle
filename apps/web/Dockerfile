@@ -27,12 +27,16 @@ RUN pnpm --filter web build
 # Production stage
 FROM alpine:latest AS runner
 
-# Create directory for static files
-WORKDIR /usr/share/caddy
+# Install necessary tools
+RUN apk add --no-cache coreutils
 
-# Copy built files from builder
-COPY --from=builder /app/apps/web/dist .
+WORKDIR /app
 
-# The container just stays alive to provide the volume contents
-# Since it's mounted in docker-compose, this will populate the shared volume
-CMD ["sleep", "infinity"]
+# Copy built files to a neutral location
+COPY --from=builder /app/apps/web/dist ./dist
+COPY apps/web/entrypoint.sh ./entrypoint.sh
+RUN chmod +x ./entrypoint.sh
+
+# The volume will be mounted at /usr/share/caddy
+# entrypoint.sh will copy files from ./dist to /usr/share/caddy
+ENTRYPOINT ["./entrypoint.sh"]

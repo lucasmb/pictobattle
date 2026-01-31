@@ -10,61 +10,54 @@ export function Canvas() {
     const [currentColor, setCurrentColor] = useState(COLORS[0]);
     const [brushSize, setBrushSize] = useState(3);
     const [isEraser, setIsEraser] = useState(false);
-    const [currentStroke, setCurrentStroke] = useState<DrawPoint[]>([]);
-
-    const { room, strokes, sendDraw, clearCanvas } = useGameStore();
+    const lastPointRef = useRef<DrawPoint | null>(null);
+    const prevStrokesCountRef = useRef(0);
+    const { room, strokes, sendDrawSegment, clearCanvas } = useGameStore();
     const currentPlayerId = useGameStore((state) => state.currentPlayerId);
 
     // Check if the CURRENT user is the drawer
     const currentPlayer = room?.players.find((p) => p.id === currentPlayerId);
     const canDraw = currentPlayer?.isDrawing && room?.gameState === 'drawing';
 
-    // Draw on canvas
+    // Utility to draw a single line segment
+    const drawLine = (ctx: CanvasRenderingContext2D, start: DrawPoint, end: DrawPoint) => {
+        ctx.beginPath();
+        ctx.moveTo(start.x, start.y);
+        ctx.lineTo(end.x, end.y);
+        ctx.strokeStyle = end.isEraser ? CANVAS_CONFIG.backgroundColor : end.color;
+        ctx.lineWidth = end.size;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.stroke();
+    };
+
+    // Handle full redraw only when needed (init, clear, or strokes reset)
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) return;
-
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
-        // Clear canvas
-        ctx.fillStyle = CANVAS_CONFIG.backgroundColor;
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-        // Draw all completed strokes
-        strokes.forEach((stroke) => {
-            if (stroke.points.length < 2) return;
-
-            ctx.beginPath();
-            ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
-
-            for (let i = 1; i < stroke.points.length; i++) {
-                const point = stroke.points[i];
-                ctx.lineTo(point.x, point.y);
-                ctx.strokeStyle = point.isEraser ? CANVAS_CONFIG.backgroundColor : point.color;
-                ctx.lineWidth = point.size;
-                ctx.lineCap = 'round';
-                ctx.lineJoin = 'round';
-                ctx.stroke();
-            }
-        });
-
-        // Draw current stroke being drawn (live preview)
-        if (currentStroke.length > 1) {
-            ctx.beginPath();
-            ctx.moveTo(currentStroke[0].x, currentStroke[0].y);
-
-            for (let i = 1; i < currentStroke.length; i++) {
-                const point = currentStroke[i];
-                ctx.lineTo(point.x, point.y);
-                ctx.strokeStyle = point.isEraser ? CANVAS_CONFIG.backgroundColor : point.color;
-                ctx.lineWidth = point.size;
-                ctx.lineCap = 'round';
-                ctx.lineJoin = 'round';
-                ctx.stroke();
-            }
+        // If strokes was cleared, clear the canvas
+        if (strokes.length === 0) {
+            ctx.fillStyle = CANVAS_CONFIG.backgroundColor;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            prevStrokesCountRef.current = 0;
+            return;
         }
-    }, [strokes, currentStroke]);
+
+        // Only draw NEW strokes that haven't been drawn yet
+        if (strokes.length > prevStrokesCountRef.current) {
+            for (let i = prevStrokesCountRef.current; i < strokes.length; i++) {
+                const stroke = strokes[i];
+                if (stroke.points.length < 2) continue;
+                for (let j = 1; j < stroke.points.length; j++) {
+                    drawLine(ctx, stroke.points[j - 1], stroke.points[j]);
+                }
+            }
+            prevStrokesCountRef.current = strokes.length;
+        }
+    }, [strokes]);
 
     const getCoordinates = (e: React.MouseEvent<HTMLCanvasElement>) => {
         const canvas = canvasRef.current;
@@ -91,13 +84,21 @@ export function Canvas() {
             size: isEraser ? CANVAS_CONFIG.eraserSize : brushSize,
             isEraser,
         };
-        setCurrentStroke([point]);
+        lastPointRef.current = point;
     };
 
     const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
         if (!isDrawing || !canDraw) return;
 
         const coords = getCoordinates(e);
+
+        // Throttling: only record if distance > 2px
+        if (lastPointRef.current) {
+            const dx = coords.x - lastPointRef.current.x;
+            const dy = coords.y - lastPointRef.current.y;
+            if (dx * dx + dy * dy < 4) return;
+        }
+
         const point: DrawPoint = {
             ...coords,
             color: currentColor,
@@ -105,21 +106,35 @@ export function Canvas() {
             isEraser,
         };
 
-        setCurrentStroke((prev) => [...prev, point]);
+        // Draw locally immediately
+        const ctx = canvasRef.current?.getContext('2d');
+        if (ctx && lastPointRef.current) {
+            drawLine(ctx, lastPointRef.current, point);
+        }
+
+        // Send segment real-time
+        if (lastPointRef.current) {
+            const segment: DrawStroke = {
+                points: [lastPointRef.current, point],
+                timestamp: Date.now()
+            };
+            sendDrawSegment(segment);
+
+            // Add to local strokes and update ref so useEffect skips redrawing it
+            useGameStore.setState((state) => ({
+                strokes: [...state.strokes, segment]
+            }));
+            prevStrokesCountRef.current++;
+        }
+
+        lastPointRef.current = point;
     };
 
     const handleMouseUp = () => {
         if (!isDrawing || !canDraw) return;
 
         setIsDrawing(false);
-        if (currentStroke.length > 0) {
-            const stroke: DrawStroke = {
-                points: currentStroke,
-                timestamp: Date.now(),
-            };
-            sendDraw(stroke);
-            setCurrentStroke([]);
-        }
+        lastPointRef.current = null;
     };
 
     const handleClearCanvas = () => {

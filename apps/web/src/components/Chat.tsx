@@ -47,9 +47,11 @@ export function Chat() {
                                     key={msg.id}
                                     className={`text-sm ${msg.isCorrectGuess
                                         ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 p-2 rounded font-bold'
-                                        : msg.playerId === 'system'
-                                            ? 'text-info italic'
-                                            : ''
+                                        : msg.isCloseGuess
+                                            ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 p-2 rounded font-bold italic'
+                                            : msg.playerId === 'system'
+                                                ? 'text-info italic'
+                                                : ''
                                         }`}
                                 >
                                     {msg.playerId !== 'system' && (
