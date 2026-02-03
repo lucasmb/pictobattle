@@ -30,12 +30,12 @@ export function Chat() {
     };
 
     return (
-        <div className="card bg-base-100 shadow-xl">
-            <div className="card-body p-4">
+        <div className="card bg-base-100 shadow-xl h-full">
+            <div className="card-body p-4 flex flex-col h-full">
                 <h3 className="font-semibold mb-2">Chat & Guesses</h3>
 
                 {/* Messages */}
-                <div className="bg-base-200 rounded-lg p-3 h-48 overflow-y-auto mb-3">
+                <div className="bg-base-200 rounded-lg p-3 flex-1 overflow-y-auto mb-3 min-h-0">
                     {messages.length === 0 ? (
                         <p className="text-center text-base-content/50 text-sm">
                             No messages yet...

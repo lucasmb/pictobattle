@@ -2,6 +2,7 @@ export interface Player {
     id: string;
     name: string;
     avatar: string;
+    clientId: string; // Unique client identifier for reconnection
     score: number;
     isAdmin: boolean;
     isDrawing: boolean;
@@ -46,6 +47,8 @@ export interface Room {
     gameState: 'lobby' | 'word-selection' | 'drawing' | 'round-end' | 'game-end';
     customWords: string[];
     revealedLetters: Record<string, number[]>; // playerId -> array of revealed indices
+    isPublic: boolean;
+    strokes: DrawStroke[]; // Current drawing strokes for the round
 }
 
 export interface RoomSummary {
@@ -54,6 +57,7 @@ export interface RoomSummary {
     players: number;
     maxPlayers: number;
     gameState: 'lobby' | 'word-selection' | 'drawing' | 'round-end' | 'game-end';
+    isPublic: boolean;
 }
 
 export interface GameSettings {
@@ -78,12 +82,15 @@ export enum SocketEvents {
     ROOM_UPDATED = 'room_updated',
     PLAYER_JOINED = 'player_joined',
     PLAYER_LEFT = 'player_left',
+    PLAYER_RECONNECTED = 'player_reconnected',
     GET_ROOMS = 'get_rooms',
     ROOMS_LIST = 'rooms_list',
 
     // Game Flow
     START_GAME = 'start_game',
     GAME_STARTED = 'game_started',
+    FORCE_START_GAME = 'force_start_game',
+    GAME_START_COUNTDOWN = 'game_start_countdown',
     RESTART_GAME = 'restart_game',
     SELECT_WORD = 'select_word',
     WORD_SELECTED = 'word_selected',
@@ -116,14 +123,18 @@ export enum SocketEvents {
 export interface CreateRoomPayload {
     playerName: string;
     playerAvatar: string;
+    clientId: string; // Unique client identifier for reconnection
     roomName?: string;
     customWords?: string[];
+    totalRounds?: number;
+    isPublic?: boolean;
 }
 
 export interface JoinRoomPayload {
     roomId: string;
     playerName: string;
     playerAvatar: string;
+    clientId: string; // Unique client identifier for reconnection
 }
 
 export interface SelectWordPayload {
@@ -155,4 +166,11 @@ export interface WordHintPayload {
 export interface ErrorPayload {
     message: string;
     code?: string;
+}
+
+// Disconnected player storage for reconnection
+export interface DisconnectedPlayer {
+    player: Player;
+    roomId: string;
+    disconnectedAt: number;
 }

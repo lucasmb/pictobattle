@@ -5,6 +5,11 @@ export const DEFAULT_GAME_SETTINGS = {
     bonusPointsForFirstGuess: 50,
 };
 
+export const KICK_COUNTDOWN_DURATION = 60; // seconds to wait before kicking not-ready players
+export const RECONNECT_WINDOW_DURATION = 300; // 5 minutes in seconds for player reconnection
+export const MIN_ROUNDS = 3;
+export const MAX_ROUNDS = 10;
+
 export const DEFAULT_WORDS = [
     'cat', 'dog', 'house', 'tree', 'car', 'sun', 'moon', 'star',
     'flower', 'bird', 'fish', 'book', 'chair', 'table', 'phone',

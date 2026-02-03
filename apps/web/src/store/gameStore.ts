@@ -28,6 +28,7 @@ interface GameState {
     // Game
     playerName: string;
     playerAvatar: string;
+    clientId: string;
     currentPlayerId: string | null;
     players: Player[];
     customWords: string[];
@@ -41,12 +42,13 @@ interface GameState {
     // UI
     error: string | null;
     isLoading: boolean;
+    startGameCountdown: number | null;
 
     // Actions
     connect: () => void;
     disconnect: () => void;
     setPlayerInfo: (name: string, avatar: string) => void;
-    createRoom: (roomName?: string, customWords?: string[]) => void;
+    createRoom: (roomName?: string, customWords?: string[], isPublic?: boolean, totalRounds?: number) => void;
     joinRoom: (roomId: string) => void;
     leaveRoom: () => void;
     startGame: () => void;
@@ -64,17 +66,61 @@ interface GameState {
 
 // const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001';
 
+// Generate unique client ID for reconnection
+const generateClientId = (): string => {
+    return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+};
+
+// Safe localStorage wrapper for mobile compatibility
+const safeLocalStorage = {
+    getItem: (key: string): string | null => {
+        try {
+            return localStorage.getItem(key);
+        } catch (e) {
+            console.warn('localStorage.getItem failed:', e);
+            return null;
+        }
+    },
+    setItem: (key: string, value: string): void => {
+        try {
+            localStorage.setItem(key, value);
+        } catch (e) {
+            console.warn('localStorage.setItem failed:', e);
+        }
+    },
+    removeItem: (key: string): void => {
+        try {
+            localStorage.removeItem(key);
+        } catch (e) {
+            console.warn('localStorage.removeItem failed:', e);
+        }
+    }
+};
+
+// Get or create client ID for reconnection
+const getClientId = (): string => {
+    let clientId = safeLocalStorage.getItem('clientId');
+    if (!clientId) {
+        clientId = generateClientId();
+        safeLocalStorage.setItem('clientId', clientId);
+    }
+    return clientId;
+};
+
 export const useGameStore = create<GameState>((set, get) => ({
     socket: null,
     isConnected: false,
 
-    roomId: null,
+    roomId: safeLocalStorage.getItem('roomId'),
     room: null,
     rooms: [],
 
+    // Client ID for reconnection
+    clientId: getClientId(),
+
     currentPlayerId: null,
-    playerName: localStorage.getItem('playerName') || '',
-    playerAvatar: localStorage.getItem('playerAvatar') || '😀',
+    playerName: safeLocalStorage.getItem('playerName') || '',
+    playerAvatar: safeLocalStorage.getItem('playerAvatar') || '😀',
     players: [],
     customWords: [],
 
@@ -83,6 +129,7 @@ export const useGameStore = create<GameState>((set, get) => ({
 
     error: null,
     isLoading: false,
+    startGameCountdown: null,
 
     // Connect to server
     connect: () => {
@@ -96,13 +143,31 @@ export const useGameStore = create<GameState>((set, get) => ({
         socket.on('connect', () => {
             console.log('Connected to server');
             set({ isConnected: true, socket });
-            // Request room list on connect
+
+            // Check if we have a saved room to rejoin
+            const savedRoomId = safeLocalStorage.getItem('roomId');
+            const { playerName, playerAvatar } = get();
+
+            // Always request room list so user sees available rooms
             socket.emit('get_rooms' as any);
+
+            // Also auto-rejoin if we have a saved room
+            if (savedRoomId && playerName) {
+                console.log('Auto-rejoining room:', savedRoomId);
+                const { clientId } = get();
+                const payload: JoinRoomPayload = {
+                    roomId: savedRoomId,
+                    playerName,
+                    playerAvatar,
+                    clientId,
+                };
+                socket.emit('join_room' as any, payload);
+            }
         });
 
         socket.on('disconnect', () => {
             console.log('Disconnected');
-            set({ isConnected: false, socket: null });
+            set({ isConnected: false, socket: null, startGameCountdown: null });
         });
 
         // Room List Listener
@@ -124,17 +189,30 @@ export const useGameStore = create<GameState>((set, get) => ({
         socket.on('room_created' as any, ({ roomId, room }: { roomId: string; room: Room }) => {
             // Find the current player (should be the admin/first player)
             const currentPlayer = room.players.find((p) => p.isAdmin);
+            safeLocalStorage.setItem('roomId', roomId);
             set({ roomId, room, currentPlayerId: currentPlayer?.id || null, isLoading: false });
         });
 
         socket.on('room_joined' as any, ({ room }: { room: Room }) => {
             // Find the current player (should be the last one added)
             const currentPlayer = room.players[room.players.length - 1];
-            set({ room, currentPlayerId: currentPlayer?.id || null, isLoading: false });
+            safeLocalStorage.setItem('roomId', room.id);
+            set({
+                room,
+                roomId: room.id,
+                currentPlayerId: currentPlayer?.id || null,
+                isLoading: false,
+                strokes: room.strokes || [] // Restore strokes from room persistence
+            });
         });
 
         socket.on('room_updated' as any, ({ room }: { room: Room }) => {
             set({ room });
+        });
+
+        // Game start countdown
+        socket.on(SocketEvents.GAME_START_COUNTDOWN, ({ secondsRemaining }: { secondsRemaining: number }) => {
+            set({ startGameCountdown: secondsRemaining });
         });
 
         socket.on('player_joined' as any, ({ player }: { player: Player }) => {
@@ -147,11 +225,11 @@ export const useGameStore = create<GameState>((set, get) => ({
 
         // Game events
         socket.on('game_started' as any, ({ room }: { room: Room }) => {
-            set({ room, messages: [], strokes: [] });
+            set({ room, messages: [], strokes: [], startGameCountdown: null });
         });
 
         socket.on('round_start' as any, ({ room }: { room: Room }) => {
-            set({ room, strokes: [], messages: [] });
+            set({ room, strokes: [], messages: [], startGameCountdown: null });
         });
 
         socket.on('word_selected' as any, ({ word }: { word: string }) => {
@@ -213,6 +291,11 @@ export const useGameStore = create<GameState>((set, get) => ({
 
         // Error events
         socket.on('error' as any, ({ message }: { message: string }) => {
+            // If room not found, clear saved roomId to prevent rejoin attempts
+            if (message === 'Room not found') {
+                safeLocalStorage.removeItem('roomId');
+                set({ roomId: null });
+            }
             set({ error: message, isLoading: false });
         });
 
@@ -249,6 +332,7 @@ export const useGameStore = create<GameState>((set, get) => ({
 
         // New feature events
         socket.on('player_kicked' as any, ({ message }: { message: string }) => {
+            safeLocalStorage.removeItem('roomId');
             set({ error: message, room: null, roomId: null });
             // Ideally redirect or show modal, error state will be picked up by UI
         });
@@ -277,29 +361,32 @@ export const useGameStore = create<GameState>((set, get) => ({
 
     // Set player info
     setPlayerInfo: (name: string, avatar: string) => {
-        localStorage.setItem('playerName', name);
-        localStorage.setItem('playerAvatar', avatar);
+        safeLocalStorage.setItem('playerName', name);
+        safeLocalStorage.setItem('playerAvatar', avatar);
         set({ playerName: name, playerAvatar: avatar });
     },
 
     // Create room
-    createRoom: (roomName?: string, customWords?: string[]) => {
-        const { socket, playerName, playerAvatar } = get();
+    createRoom: (roomName?: string, customWords?: string[], isPublic?: boolean, totalRounds?: number) => {
+        const { socket, playerName, playerAvatar, clientId } = get();
         if (!socket || !playerName) return;
 
         set({ isLoading: true, error: null });
         const payload: CreateRoomPayload = {
             playerName,
             playerAvatar,
+            clientId,
             roomName,
             customWords,
+            isPublic: isPublic ?? true,
+            totalRounds,
         };
         socket.emit('create_room' as any, payload);
     },
 
     // Join room
     joinRoom: (roomId: string) => {
-        const { socket, playerName, playerAvatar } = get();
+        const { socket, playerName, playerAvatar, clientId } = get();
         if (!socket || !playerName) return;
 
         set({ isLoading: true, error: null, roomId });
@@ -307,6 +394,7 @@ export const useGameStore = create<GameState>((set, get) => ({
             roomId,
             playerName,
             playerAvatar,
+            clientId,
         };
         socket.emit('join_room' as any, payload);
     },
@@ -317,6 +405,7 @@ export const useGameStore = create<GameState>((set, get) => ({
         if (!socket) return;
 
         socket.emit('leave_room' as any);
+        safeLocalStorage.removeItem('roomId');
         set({ room: null, roomId: null, messages: [], strokes: [] });
     },
 
