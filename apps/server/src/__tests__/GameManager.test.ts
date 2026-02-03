@@ -257,6 +257,104 @@ describe('GameManager - Room Management', () => {
             // Room should be updated (not deleted immediately)
             expect(mockRedis.hset).toHaveBeenCalled();
         });
+
+        it('should leave socket room before broadcasting updates', async () => {
+            const socket1 = createMockSocket('socket-1') as any;
+            const socket2 = createMockSocket('socket-2') as any;
+            const roomId = 'room-1';
+
+            // Setup mock room with 2 players
+            const room: any = {
+                id: roomId,
+                players: [
+                    { id: 'p1', name: 'Alice', clientId: 'c1' },
+                    { id: 'p2', name: 'Bob', clientId: 'c2' }
+                ],
+                gameState: 'lobby'
+            };
+
+            (gameManager as any).playerRooms.set(socket2.id, roomId);
+            socket2.data.playerId = 'p2';
+
+            mockRedis.hget.mockResolvedValue(JSON.stringify(room));
+
+            // We want to check call order: socket.leave needs to happen BEFORE io.to().emit
+            // Since io.to().emit is chained, we can check io.to call order or emit call order.
+            // But io.to() happens before emit().
+
+            await gameManager.leaveRoom(socket2);
+
+            expect(socket2.leave).toHaveBeenCalledWith(roomId);
+
+            // Check order
+            const leaveOrder = socket2.leave.mock.invocationCallOrder[0];
+
+            // We need to find the emit call corresponding to ROOM_UPDATED
+            // io.to(roomId).emit(...)
+            // calls to io.to are mocks returning an object with emit.
+            // We need to check the call order of the *emit* method on the object returned by io.to(roomId).
+            // Since io.to is a mock that return `this` or a fresh object?
+            // createMockServer: to: vi.fn().mockReturnThis()
+            // So `io.to` returns `io`.
+            // So `io.emit` is called.
+
+            // Filter calls to emit that are 'room_updated'
+            // io.emit is a mock.
+            const emitCalls = io.emit.mock.calls;
+            // Wait, io.to(roomId).emit(...) -> io.to returns 'this' (io). So io.emit is called.
+            // We want to find the call for SocketEvents.ROOM_UPDATED
+
+            // In the test setup:
+            // const createMockServer = () => ({ ... to: vi.fn().mockReturnThis() ... })
+            // So calling io.to().emit() is same as io.emit().
+
+            // But wait, order of operations:
+            // 1. socket.leave(roomId)
+            // 2. io.to(roomId).emit(...)
+
+            // If leave happens first, leaveOrder < emitOrder.
+
+            // Find call index for ROOM_UPDATED
+            const updatedCallIndex = io.emit.mock.invocationCallOrder.find((order: number, index: number) => {
+                return io.emit.mock.calls[index][0] === SocketEvents.ROOM_UPDATED;
+            });
+
+            // If updatedCallIndex is undefined, it means it wasn't called (which is wrong, it should be)
+            // Actually invocationCallOrder is an array of numbers. calls is array of args. They are parallel? 
+            // Usually yes.
+
+            // Let's rely on specific check:
+            // We expect socket2.leave to be called.
+            // We expect io.to(roomId).emit(ROOM_UPDATED) to be called.
+
+            // Getting precise call order in Vitest:
+            // We can check if `leave` was called.
+            // Let's just try to fix it and verify manually or via loose check?
+            // No, let's try to be precise if possible.
+
+            // Simpler approach:
+            // The leaveRoom function awaits updateRoom (which emits).
+            // Then it calls socket.leave.
+            // So updateRoom finishes (emits) BEFORE socket.leave.
+            // This confirms the bug.
+
+            // I will write the test to EXPECT the correct order (leave THEN emit).
+            // This test should FAIL currently.
+
+            // To access call order properly:
+            const leaveCallOrder = socket2.leave.mock.invocationCallOrder[0];
+
+            // Find the emit call for ROOM_UPDATED
+            let roomUpdatedCallOrder = -1;
+            for (let i = 0; i < io.emit.mock.calls.length; i++) {
+                if (io.emit.mock.calls[i][0] === SocketEvents.ROOM_UPDATED) {
+                    roomUpdatedCallOrder = io.emit.mock.invocationCallOrder[i];
+                    break;
+                }
+            }
+
+            expect(leaveCallOrder).toBeLessThan(roomUpdatedCallOrder);
+        });
     });
 
     describe('Reconnection', () => {
@@ -288,7 +386,7 @@ describe('GameManager - Room Management', () => {
             const socket1 = createMockSocket('socket-1') as any;
             const socket2 = createMockSocket('socket-2') as any;
 
-            await gameManager.createRoom(socket1, { playerName: 'Alice', playerAvatar: '😀' });
+            await gameManager.createRoom(socket1, { playerName: 'Alice', playerAvatar: '😀', clientId: 'c1' });
             const roomId = (socket1.emit.mock.calls[0][1] as any).roomId;
             const playerId = (socket1.emit.mock.calls[0][1] as any).room.players[0].id;
 
@@ -493,7 +591,7 @@ describe('GameManager - Room Management', () => {
             }));
 
             // Rejoin before deletion timer expires
-            await gameManager.joinRoom(socket2, { roomId, playerName: 'Bob', playerAvatar: '😎' });
+            await gameManager.joinRoom(socket2, { roomId, playerName: 'Bob', playerAvatar: '😎', clientId: 'c2' });
 
             expect(socket2.emit).toHaveBeenCalledWith(
                 SocketEvents.ROOM_JOINED,
