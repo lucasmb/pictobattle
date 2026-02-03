@@ -235,6 +235,10 @@ export class GameManager {
         // 2. It naturally expires after RECONNECT_WINDOW_DURATION (5 minutes)
         // 3. It's deleted on successful reconnection anyway
 
+        // Leave the socket room immediately so they don't receive the update events
+        socket.leave(roomId);
+        this.playerRooms.delete(socket.id);
+
         if (room.players.length === 0) {
             // Clear existing empty room timer if any
             const existingTimer = this.emptyRoomTimers.get(roomId);
@@ -267,9 +271,6 @@ export class GameManager {
             this.io.to(roomId).emit(SocketEvents.PLAYER_LEFT, { playerId });
             this.io.to(roomId).emit(SocketEvents.ROOM_UPDATED, { room });
         }
-
-        socket.leave(roomId);
-        this.playerRooms.delete(socket.id);
     }
 
     async startGame(socket: Socket) {
