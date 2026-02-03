@@ -2,6 +2,7 @@ export interface Player {
     id: string;
     name: string;
     avatar: string;
+    clientId: string; // Unique client identifier for reconnection
     score: number;
     isAdmin: boolean;
     isDrawing: boolean;
@@ -47,6 +48,7 @@ export interface Room {
     customWords: string[];
     revealedLetters: Record<string, number[]>; // playerId -> array of revealed indices
     isPublic: boolean;
+    strokes: DrawStroke[]; // Current drawing strokes for the round
 }
 
 export interface RoomSummary {
@@ -121,6 +123,7 @@ export enum SocketEvents {
 export interface CreateRoomPayload {
     playerName: string;
     playerAvatar: string;
+    clientId: string; // Unique client identifier for reconnection
     roomName?: string;
     customWords?: string[];
     totalRounds?: number;
@@ -131,6 +134,7 @@ export interface JoinRoomPayload {
     roomId: string;
     playerName: string;
     playerAvatar: string;
+    clientId: string; // Unique client identifier for reconnection
 }
 
 export interface SelectWordPayload {

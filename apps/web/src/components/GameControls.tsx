@@ -25,11 +25,11 @@ export function GameControls() {
                 <div className="space-y-2">
                     {/* Countdown Display */}
                     {startGameCountdown !== null && startGameCountdown > 0 && (
-                        <div className="alert alert-warning py-3">
+                        <div className="alert alert-error py-3 shadow-lg border-2 border-error">
                             <div className="flex flex-col items-center w-full">
-                                <span className="text-sm font-semibold">Starting in...</span>
-                                <span className="text-3xl font-bold text-warning">{startGameCountdown}s</span>
-                                <span className="text-xs">Unready players will be kicked</span>
+                                <span className="text-sm font-bold text-error-content uppercase tracking-wider">Starting in</span>
+                                <span className="text-5xl font-black text-error-content my-1">{startGameCountdown}</span>
+                                <span className="text-xs text-error-content font-semibold">Unready players will be kicked</span>
                             </div>
                         </div>
                     )}

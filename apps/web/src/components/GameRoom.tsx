@@ -17,8 +17,8 @@ export function GameRoom() {
     const isPlaying = room.gameState === 'drawing';
 
     return (
-        <div className="min-h-screen bg-base-200">
-            <div className="container mx-auto p-4">
+        <div className="min-h-screen bg-base-200 flex flex-col">
+            <div className="container mx-auto p-4 flex flex-col flex-1">
                 {/* Header */}
                 <div className="flex items-center justify-between mb-4">
                     <div>
@@ -42,17 +42,21 @@ export function GameRoom() {
                 {showScoreboard && <Scoreboard />}
 
                 {/* Main Game Area */}
-                <div className="grid lg:grid-cols-[1fr_300px] gap-4">
-                    {/* Left Column: Canvas and Chat */}
-                    <div className="space-y-4">
-                        <Canvas />
-                        <Chat />
-                    </div>
-
-                    {/* Right Column: Players and Controls */}
-                    <div className="space-y-4">
+                <div className="grid lg:grid-cols-[280px_1fr_320px] gap-4 flex-1 min-h-0">
+                    {/* Left Column: Players and Controls */}
+                    <div className="space-y-4 flex flex-col">
                         <PlayerList />
                         <GameControls />
+                    </div>
+
+                    {/* Middle Column: Canvas */}
+                    <div className="space-y-4 flex flex-col">
+                        <Canvas />
+                    </div>
+
+                    {/* Right Column: Chat */}
+                    <div className="flex flex-col h-full">
+                        <Chat />
                     </div>
                 </div>
             </div>

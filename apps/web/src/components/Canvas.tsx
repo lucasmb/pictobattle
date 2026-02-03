@@ -170,6 +170,32 @@ export function Canvas() {
     return (
         <div className="card bg-base-100 shadow-xl">
             <div className="card-body p-4">
+                {/* Current Word Hint - Moved to top */}
+                {room?.gameState === 'drawing' && room.currentWord && (
+                    <div className="text-center mb-4">
+                        {canDraw ? (
+                            <p className="text-lg font-bold">
+                                Draw: <span className="text-primary">{room.currentWord}</span>
+                            </p>
+                        ) : (
+                            <p className="text-lg font-mono tracking-widest">
+                                {room.currentWord.split('').map((char, i) => {
+                                    const revealedIndices = room.revealedLetters?.[currentPlayer?.id || ''] || [];
+                                    const isRevealed = revealedIndices.includes(i);
+                                    const isSpecial = char === ' ' || char === '-';
+
+                                    return (
+                                        <span key={i} className={isRevealed ? "text-primary font-bold" : ""}>
+                                            {isRevealed || isSpecial ? char : '_'}
+                                            {' '}
+                                        </span>
+                                    );
+                                })}
+                            </p>
+                        )}
+                    </div>
+                )}
+
                 {/* Drawing Tools */}
                 {canDraw && (
                     <div className="flex flex-wrap items-center gap-2 mb-4">
@@ -235,32 +261,6 @@ export function Canvas() {
                         onTouchEnd={handleTouchEnd}
                     />
                 </div>
-
-                {/* Current Word Hint */}
-                {room?.gameState === 'drawing' && room.currentWord && (
-                    <div className="text-center mt-2">
-                        {canDraw ? (
-                            <p className="text-lg font-bold">
-                                Draw: <span className="text-primary">{room.currentWord}</span>
-                            </p>
-                        ) : (
-                            <p className="text-lg font-mono tracking-widest">
-                                {room.currentWord.split('').map((char, i) => {
-                                    const revealedIndices = room.revealedLetters?.[currentPlayer?.id || ''] || [];
-                                    const isRevealed = revealedIndices.includes(i);
-                                    const isSpecial = char === ' ' || char === '-';
-
-                                    return (
-                                        <span key={i} className={isRevealed ? "text-primary font-bold" : ""}>
-                                            {isRevealed || isSpecial ? char : '_'}
-                                            {' '}
-                                        </span>
-                                    );
-                                })}
-                            </p>
-                        )}
-                    </div>
-                )}
             </div>
         </div>
     );

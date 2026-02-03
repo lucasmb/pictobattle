@@ -12,6 +12,8 @@ A real-time multiplayer Pictionary game built with React 19, Node.js, Socket.io,
 - 🎭 Avatar selection
 - 🎯 5-round game flow
 - 📊 Live scoreboard
+- 🔌 **Robust Reconnection**: Persist game state even if you refresh or disconnect
+- 🚀 **Horizontal Scaling**: Redis Pub/Sub enabled for multi-instance support
 
 ## Tech Stack
 
