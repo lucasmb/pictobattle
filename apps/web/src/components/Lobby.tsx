@@ -6,6 +6,7 @@ export function Lobby() {
     const [roomIdInput, setRoomIdInput] = useState('');
     const [customWords, setCustomWords] = useState('');
     const [showCustomWords, setShowCustomWords] = useState(false);
+    const [isPublic, setIsPublic] = useState(true);
     const [copied, setCopied] = useState(false);
     const { createRoom, joinRoom, roomId, error, clearError, isLoading } = useGameStore();
 
@@ -14,7 +15,7 @@ export function Lobby() {
             .split(',')
             .map((w) => w.trim())
             .filter((w) => w.length > 0);
-        createRoom(undefined, words.length > 0 ? words : undefined);
+        createRoom(undefined, words.length > 0 ? words : undefined, isPublic);
     };
 
     const handleJoinRoom = () => {
@@ -68,6 +69,18 @@ export function Lobby() {
                         <div className="grid md:grid-cols-2 gap-6">
                             <div className="space-y-4">
                                 <h3 className="text-xl font-semibold text-center">Create Room</h3>
+
+                                <div className="form-control">
+                                    <label className="label cursor-pointer">
+                                        <span className="label-text">Public room (visible in lobby)</span>
+                                        <input
+                                            type="checkbox"
+                                            className="toggle toggle-primary"
+                                            checked={isPublic}
+                                            onChange={(e) => setIsPublic(e.target.checked)}
+                                        />
+                                    </label>
+                                </div>
 
                                 <div className="form-control">
                                     <label className="label cursor-pointer">

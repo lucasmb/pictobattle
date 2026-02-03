@@ -41,12 +41,13 @@ interface GameState {
     // UI
     error: string | null;
     isLoading: boolean;
+    startGameCountdown: number | null;
 
     // Actions
     connect: () => void;
     disconnect: () => void;
     setPlayerInfo: (name: string, avatar: string) => void;
-    createRoom: (roomName?: string, customWords?: string[]) => void;
+    createRoom: (roomName?: string, customWords?: string[], isPublic?: boolean) => void;
     joinRoom: (roomId: string) => void;
     leaveRoom: () => void;
     startGame: () => void;
@@ -64,17 +65,43 @@ interface GameState {
 
 // const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001';
 
+// Safe localStorage wrapper for mobile compatibility
+const safeLocalStorage = {
+    getItem: (key: string): string | null => {
+        try {
+            return localStorage.getItem(key);
+        } catch (e) {
+            console.warn('localStorage.getItem failed:', e);
+            return null;
+        }
+    },
+    setItem: (key: string, value: string): void => {
+        try {
+            localStorage.setItem(key, value);
+        } catch (e) {
+            console.warn('localStorage.setItem failed:', e);
+        }
+    },
+    removeItem: (key: string): void => {
+        try {
+            localStorage.removeItem(key);
+        } catch (e) {
+            console.warn('localStorage.removeItem failed:', e);
+        }
+    }
+};
+
 export const useGameStore = create<GameState>((set, get) => ({
     socket: null,
     isConnected: false,
 
-    roomId: null,
+    roomId: safeLocalStorage.getItem('roomId'),
     room: null,
     rooms: [],
 
     currentPlayerId: null,
-    playerName: localStorage.getItem('playerName') || '',
-    playerAvatar: localStorage.getItem('playerAvatar') || '😀',
+    playerName: safeLocalStorage.getItem('playerName') || '',
+    playerAvatar: safeLocalStorage.getItem('playerAvatar') || '😀',
     players: [],
     customWords: [],
 
@@ -83,6 +110,7 @@ export const useGameStore = create<GameState>((set, get) => ({
 
     error: null,
     isLoading: false,
+    startGameCountdown: null,
 
     // Connect to server
     connect: () => {
@@ -96,13 +124,29 @@ export const useGameStore = create<GameState>((set, get) => ({
         socket.on('connect', () => {
             console.log('Connected to server');
             set({ isConnected: true, socket });
-            // Request room list on connect
+            
+            // Check if we have a saved room to rejoin
+            const savedRoomId = safeLocalStorage.getItem('roomId');
+            const { playerName, playerAvatar } = get();
+            
+            // Always request room list so user sees available rooms
             socket.emit('get_rooms' as any);
+            
+            // Also auto-rejoin if we have a saved room
+            if (savedRoomId && playerName) {
+                console.log('Auto-rejoining room:', savedRoomId);
+                const payload: JoinRoomPayload = {
+                    roomId: savedRoomId,
+                    playerName,
+                    playerAvatar,
+                };
+                socket.emit('join_room' as any, payload);
+            }
         });
 
         socket.on('disconnect', () => {
             console.log('Disconnected');
-            set({ isConnected: false, socket: null });
+            set({ isConnected: false, socket: null, startGameCountdown: null });
         });
 
         // Room List Listener
@@ -124,17 +168,24 @@ export const useGameStore = create<GameState>((set, get) => ({
         socket.on('room_created' as any, ({ roomId, room }: { roomId: string; room: Room }) => {
             // Find the current player (should be the admin/first player)
             const currentPlayer = room.players.find((p) => p.isAdmin);
+            safeLocalStorage.setItem('roomId', roomId);
             set({ roomId, room, currentPlayerId: currentPlayer?.id || null, isLoading: false });
         });
 
         socket.on('room_joined' as any, ({ room }: { room: Room }) => {
             // Find the current player (should be the last one added)
             const currentPlayer = room.players[room.players.length - 1];
-            set({ room, currentPlayerId: currentPlayer?.id || null, isLoading: false });
+            safeLocalStorage.setItem('roomId', room.id);
+            set({ room, roomId: room.id, currentPlayerId: currentPlayer?.id || null, isLoading: false });
         });
 
         socket.on('room_updated' as any, ({ room }: { room: Room }) => {
             set({ room });
+        });
+
+        // Game start countdown
+        socket.on(SocketEvents.GAME_START_COUNTDOWN, ({ secondsRemaining }: { secondsRemaining: number }) => {
+            set({ startGameCountdown: secondsRemaining });
         });
 
         socket.on('player_joined' as any, ({ player }: { player: Player }) => {
@@ -213,6 +264,11 @@ export const useGameStore = create<GameState>((set, get) => ({
 
         // Error events
         socket.on('error' as any, ({ message }: { message: string }) => {
+            // If room not found, clear saved roomId to prevent rejoin attempts
+            if (message === 'Room not found') {
+                safeLocalStorage.removeItem('roomId');
+                set({ roomId: null });
+            }
             set({ error: message, isLoading: false });
         });
 
@@ -277,13 +333,13 @@ export const useGameStore = create<GameState>((set, get) => ({
 
     // Set player info
     setPlayerInfo: (name: string, avatar: string) => {
-        localStorage.setItem('playerName', name);
-        localStorage.setItem('playerAvatar', avatar);
+        safeLocalStorage.setItem('playerName', name);
+        safeLocalStorage.setItem('playerAvatar', avatar);
         set({ playerName: name, playerAvatar: avatar });
     },
 
     // Create room
-    createRoom: (roomName?: string, customWords?: string[]) => {
+    createRoom: (roomName?: string, customWords?: string[], isPublic?: boolean) => {
         const { socket, playerName, playerAvatar } = get();
         if (!socket || !playerName) return;
 
@@ -293,6 +349,7 @@ export const useGameStore = create<GameState>((set, get) => ({
             playerAvatar,
             roomName,
             customWords,
+            isPublic: isPublic ?? true,
         };
         socket.emit('create_room' as any, payload);
     },
@@ -317,6 +374,7 @@ export const useGameStore = create<GameState>((set, get) => ({
         if (!socket) return;
 
         socket.emit('leave_room' as any);
+        safeLocalStorage.removeItem('roomId');
         set({ room: null, roomId: null, messages: [], strokes: [] });
     },
 

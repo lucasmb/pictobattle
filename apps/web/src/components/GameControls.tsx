@@ -2,7 +2,7 @@ import { useGameStore } from '../store/gameStore';
 import { LogOut, Play } from 'lucide-react';
 
 export function GameControls() {
-    const { room, startGame, leaveRoom, setReady, currentPlayerId } = useGameStore();
+    const { room, startGame, leaveRoom, setReady, currentPlayerId, startGameCountdown } = useGameStore();
 
     if (!room) return null;
 
@@ -23,6 +23,17 @@ export function GameControls() {
                 <h3 className="font-semibold mb-3">Game Controls</h3>
 
                 <div className="space-y-2">
+                    {/* Countdown Display */}
+                    {startGameCountdown !== null && startGameCountdown > 0 && (
+                        <div className="alert alert-warning py-3">
+                            <div className="flex flex-col items-center w-full">
+                                <span className="text-sm font-semibold">Starting in...</span>
+                                <span className="text-3xl font-bold text-warning">{startGameCountdown}s</span>
+                                <span className="text-xs">Unready players will be kicked</span>
+                            </div>
+                        </div>
+                    )}
+
                     {/* Admin Controls */}
                     {canStartGame && (
                         <div className="space-y-2">
