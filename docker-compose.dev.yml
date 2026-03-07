@@ -1,7 +1,69 @@
 services:
+  server:
+    image: ${SERVER_IMAGE:-pictobattle-server:latest}
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    container_name: pictobattle-server
+    restart: unless-stopped
+    networks:
+      - caddy-network
+    environment:
+      - NODE_ENV=production
+      - PORT=4000
+      - CLIENT_URL=${CLIENT_URL:-http://localhost}
+      - REDIS_HOST=redis
+    # Expose port if needed to be opened in UFW, though Caddy can proxy via network
+    ports:
+      - "4000:4000"
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 512M
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+    depends_on:
+      - redis
+
   redis:
     image: redis:alpine
     container_name: pictobattle-redis-dev
     ports:
       - "6379:6379"
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  web:
+    image: ${WEB_IMAGE:-pictobattle-web:latest}
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        - VITE_SERVER_URL=${VITE_SERVER_URL:-http://localhost:4000}
+    container_name: pictobattle-web
     restart: unless-stopped
+    networks:
+      - caddy-network
+    volumes:
+      - pictobattle_web_static:/usr/share/caddy/html
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 256M
+
+networks:
+  caddy-network:
+    external: true
+
+volumes:
+  pictobattle_web_static:
+    name: pictobattle_web_static
