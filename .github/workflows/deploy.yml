@@ -7,8 +7,9 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME_SERVER: ${{ github.repository }}-server
-  IMAGE_NAME_WEB: ${{ github.repository }}-web
+  # IMAGE_NAME_SERVER: ${{ github.repository }}-server
+  # IMAGE_NAME_WEB: ${{ github.repository }}-web
+  IMAGE_BASE: ${{ github.repository }}
   PORT: 4000
 
 jobs:
@@ -17,12 +18,16 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.get_version.outputs.VERSION }}
+      lower_image_base: ${{ steps.lowercase.outputs.IMAGE_BASE }}
     steps:
       - uses: actions/checkout@v4
       - id: get_version
         run: echo "VERSION=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
 
-  # 2. Build images in parallel
+      # This ensures the image name is lowercase (Required by Docker)
+      - id: lowercase
+        run: echo "IMAGE_BASE=${GITHUB_REPOSITORY@L}" >> $GITHUB_OUTPUT # 2. Build images in parallel
+
   build-and-push:
     needs: setup
     runs-on: ubuntu-latest
@@ -58,7 +63,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_BASE }}-${{ matrix.service }}
+          images: ${{ env.REGISTRY }}/${{ needs.setup.outputs.lower_image_base }}-${{ matrix.service }}
           tags: |
             type=raw,value=latest
             type=raw,value=${{ needs.setup.outputs.version }}
@@ -70,8 +75,8 @@ jobs:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
           push: true
-          tags: ${{ id.meta.outputs.tags }}
-          labels: ${{ id.meta.outputs.labels }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
@@ -109,11 +114,11 @@ jobs:
             PORT=${{ env.PORT }}
             CLIENT_URL=${{ secrets.CLIENT_URL }}
             VITE_SERVER_URL=${{ secrets.VITE_SERVER_URL }}
-            SERVER_IMAGE=${{ env.REGISTRY }}/${{ env.IMAGE_BASE }}-server:${{ needs.setup.outputs.version }}
-            WEB_IMAGE=${{ env.REGISTRY }}/${{ env.IMAGE_BASE }}-web:${{ needs.setup.outputs.version }}
+            SERVER_IMAGE=${{ env.REGISTRY }}/${{ needs.setup.outputs.lower_image_base }}-server:${{ needs.setup.outputs.version }}
+            WEB_IMAGE=${{ env.REGISTRY }}/${{ needs.setup.outputs.lower_image_base }}-web:${{ needs.setup.outputs.version }}
             EOF
 
-            # Log in to registry on VPS (needed for private images)
+            # Log in to registry on VPS
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ${{ env.REGISTRY }} -u ${{ github.actor }} --password-stdin
 
             docker compose pull
