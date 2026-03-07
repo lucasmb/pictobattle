@@ -1,9 +1,6 @@
 services:
   server:
     image: ${SERVER_IMAGE:-pictobattle-server:latest}
-    build:
-      context: .
-      dockerfile: apps/server/Dockerfile
     container_name: pictobattle-server
     restart: unless-stopped
     networks:
@@ -11,34 +8,59 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=4000
-      - CLIENT_URL=${CLIENT_URL:-http://localhost}
+      - CLIENT_URL=${CLIENT_URL}
       - REDIS_HOST=redis
-    # Expose port if needed to be opened in UFW, though Caddy can proxy via network
-    ports:
-      - "4000:4000"
+    # We remove 'ports' because Caddy accesses this via the internal network
     security_opt:
       - no-new-privileges:true
     deploy:
       resources:
         limits:
-          cpus: '0.50'
+          cpus: "0.50"
           memory: 512M
-        reservations:
-          cpus: '0.25'
-          memory: 256M
+    healthcheck:
+      test: [
+          "CMD",
+          "wget",
+          "--no-verbose",
+          "--tries=1",
+          "--spider",
+          "http://localhost:${PORT:-4000}/health",
+        ] # Adjust to your health endpoint
+      interval: 30s
+      timeout: 10s
+      retries: 3
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   redis:
-    image: redis:alpine
+    image: redis:8-alpine # Specified version for stability
     container_name: pictobattle-redis
     restart: unless-stopped
+    command: redis-server --appendonly yes # Enables data persistence
     networks:
       - caddy-network
+    volumes:
+      - redis_data:/data
     deploy:
       resources:
         limits:
           memory: 256M
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
 
   web:
     image: ${WEB_IMAGE:-pictobattle-web:latest}
@@ -52,19 +74,24 @@ services:
     networks:
       - caddy-network
     volumes:
-      - pictobattle_web_static:/usr/share/caddy
+      - pictobattle_web_static:/usr/share/caddy/html
     security_opt:
       - no-new-privileges:true
     deploy:
       resources:
         limits:
-          cpus: '0.50'
-          memory: 256M
+          cpus: "0.25"
+          memory: 128M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
 
 networks:
   caddy-network:
     external: true
 
 volumes:
+  redis_data:
   pictobattle_web_static:
     name: pictobattle_web_static
