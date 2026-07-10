@@ -1,6 +1,6 @@
 {
   "name": "server",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "main": "dist/index.js",
@@ -14,18 +14,18 @@
     "@pictobattle/shared": "workspace:*",
     "@socket.io/redis-adapter": "^8.3.0",
     "cors": "^2.8.5",
-    "dotenv": "^16.4.7",
-    "express": "^4.21.2",
-    "ioredis": "^5.4.2",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "ioredis": "^5.11.1",
     "socket.io": "^4.8.1",
-    "zod": "^3.24.1"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.0",
-    "@types/node": "^22.10.10",
-    "typescript": "^5.7.3",
-    "vite": "^6.0.11",
-    "vitest": "^3.0.4"
+    "@types/node": "^24.13.3",
+    "typescript": "^7.0.2",
+    "vite": "^8.1.4",
+    "vitest": "^4.1.10"
   }
 }

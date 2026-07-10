@@ -7,7 +7,8 @@ RUN corepack enable && corepack prepare pnpm@latest --activate
 WORKDIR /app
 
 # Copy workspace config and package files
-COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+# COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+COPY package.json ./
 COPY apps/server/package.json ./apps/server/
 COPY packages/shared/package.json ./packages/shared/
 
@@ -35,7 +36,7 @@ ENV NODE_ENV=production
 COPY --from=builder /app/apps/server/dist/index.js ./index.js
 
 # Install socket.io and ws (can't be bundled due to complex internal dependencies)
-RUN npm install socket.io@4.8.1 ws@8.17.1 --omit=dev --no-package-lock
+RUN npm install socket.io@4.8.3 ws@8.21.0 --omit=dev --no-package-lock
 
 # Use non-root user
 USER node

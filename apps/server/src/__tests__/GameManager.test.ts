@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { GameManager } from '../game/GameManager.ts';
 import { SocketEvents } from '@pictobattle/shared';
 
@@ -566,7 +566,7 @@ describe('GameManager - Room Management', () => {
             const socket1 = createMockSocket('socket-1') as any;
             const socket2 = createMockSocket('socket-2') as any;
 
-            await gameManager.createRoom(socket1, { playerName: 'Alice', playerAvatar: '😀' });
+            await gameManager.createRoom(socket1, { playerName: 'Alice', playerAvatar: '😀', clientId: 'c1' });
             const roomId = (socket1.emit.mock.calls[0][1] as any).roomId;
             const playerId = (socket1.emit.mock.calls[0][1] as any).room.players[0].id;
             socket1.data.playerId = playerId;

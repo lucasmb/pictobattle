@@ -1,20 +1,22 @@
 {
   "name": "pictobattle",
-  "version": "1.0.6",
+  "private": true,
+  "version": "1.1.0",
   "description": "",
-  "main": "index.js",
   "scripts": {
+    "dev": "pnpm --filter=@workspace/* --parallel dev",
+    "lint": "oxlint .",
+    "lint:fix": "oxlint --fix .",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "packageManager": "pnpm@10.28.1",
+  "packageManager": "pnpm@11.9.0",
   "engines": {
     "node": ">=24"
   },
   "devDependencies": {
-    "typescript": "^5.9.3",
-    "vitest": "^3.2.4"
+
   }
 }

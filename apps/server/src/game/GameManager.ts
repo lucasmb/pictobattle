@@ -19,7 +19,7 @@ import type {
     SendMessagePayload,
     Message,
 } from '@pictobattle/shared';
-import { generateRoomId, generatePlayerId, generateMessageId, selectRandomWord, selectRandomPlayer, getLevenshteinDistance } from '../utils/helpers.ts';
+import { generateRoomId, generatePlayerId, generateMessageId, selectRandomWord, getLevenshteinDistance } from '../utils/helpers.ts';
 
 export class GameManager {
     private redis: Redis;
@@ -342,7 +342,7 @@ export class GameManager {
             }
         }, 1000);
 
-        this.startGameTimers.set(roomId, countdownInterval as unknown as NodeJS.Timeout);
+        this.startGameTimers.set(roomId, countdownInterval);
     }
 
     async forceStartGame(socket: Socket) {
@@ -791,7 +791,6 @@ export class GameManager {
         const playerId = socket.data.playerId;
         const player = room.players.find((p) => p.id === playerId);
 
-        // Save disconnected player for reconnection (works for both lobby and in-progress games)
         // Save disconnected player for reconnection (works for both lobby and in-progress games)
         // BUT do not save if the game has ended - let them just leave
         if (player && room.gameState !== 'game-end') {
