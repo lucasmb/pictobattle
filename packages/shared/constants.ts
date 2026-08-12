@@ -9,6 +9,8 @@ export const KICK_COUNTDOWN_DURATION = 60; // seconds to wait before kicking not
 export const RECONNECT_WINDOW_DURATION = 300; // 5 minutes in seconds for player reconnection
 export const MIN_ROUNDS = 3;
 export const MAX_ROUNDS = 10;
+export const MAX_PLAYERS = 10;
+export const MAX_STORED_STROKES = 200; // cap on replayed strokes stored per round
 
 export const DEFAULT_WORDS = [
     'cat', 'dog', 'house', 'tree', 'car', 'sun', 'moon', 'star',

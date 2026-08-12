@@ -3,7 +3,7 @@ import { GameManager } from '../game/GameManager.ts';
 import { SocketEvents } from '@pictobattle/shared';
 
 // Mock Redis
-const mockRedis = {
+const mockRedis = vi.hoisted(() => ({
     hset: vi.fn().mockResolvedValue(undefined),
     hget: vi.fn().mockResolvedValue(null),
     hdel: vi.fn().mockResolvedValue(undefined),
@@ -12,10 +12,12 @@ const mockRedis = {
     get: vi.fn().mockResolvedValue(null),
     del: vi.fn().mockResolvedValue(undefined),
     on: vi.fn(),
-};
+}));
 
 vi.mock('ioredis', () => ({
-    Redis: vi.fn().mockImplementation(() => mockRedis),
+    Redis: vi.fn(function (this: unknown) {
+        return mockRedis;
+    }),
 }));
 
 // Mock Socket.io
@@ -198,6 +200,40 @@ describe('GameManager - Room Management', () => {
                 SocketEvents.ERROR,
                 { message: 'Game already in progress' }
             );
+        });
+
+        it('should reject joining a full room', async () => {
+            const roomId = 'room-full';
+            const players = Array.from({ length: 10 }, (_, i) => ({
+                id: `p${i}`, name: `P${i}`, avatar: '😀', clientId: `c${i}`,
+                isAdmin: i === 0, isDrawing: false, hasGuessed: false, isReady: false,
+            }));
+
+            mockRedis.hget.mockResolvedValueOnce(JSON.stringify({
+                id: roomId, players, gameState: 'lobby', isPublic: true,
+            }));
+
+            const socket = createMockSocket('socket-x') as any;
+            await gameManager.joinRoom(socket, {
+                roomId, playerName: 'Charlie', playerAvatar: '🤓', clientId: 'c-new'
+            });
+
+            expect(socket.emit).toHaveBeenCalledWith(
+                SocketEvents.ERROR,
+                { message: 'Room is full (max 10 players)' }
+            );
+            expect(socket.join).not.toHaveBeenCalled();
+        });
+
+        it('should reject joining with an over-length room id', async () => {
+            const socket = createMockSocket('socket-x') as any;
+            mockRedis.hget.mockResolvedValueOnce(null);
+
+            await gameManager.joinRoom(socket, {
+                roomId: 'X'.repeat(21), playerName: 'Alice', playerAvatar: '😀', clientId: 'c1'
+            });
+
+            expect(socket.join).not.toHaveBeenCalled();
         });
     });
 
