@@ -17,12 +17,12 @@ export function GameRoom() {
     const isPlaying = room.gameState === 'drawing';
 
     return (
-        <div className="min-h-screen bg-base-200 flex flex-col">
+        <div className="min-h-screen flex flex-col">
             <div className="container mx-auto p-4 flex flex-col flex-1">
                 {/* Header */}
                 <div className="flex items-center justify-between mb-4">
                     <div>
-                        <h1 className="text-3xl font-bold">{room.name}</h1>
+                        <h1 className="text-4xl">{room.name}</h1>
                         <p className="text-sm text-base-content/70">
                             Room Code: <span className="font-mono font-bold">{room.id}</span>
                         </p>

@@ -11,8 +11,20 @@ const mockRedis = vi.hoisted(() => ({
     setex: vi.fn().mockResolvedValue(undefined),
     get: vi.fn().mockResolvedValue(null),
     del: vi.fn().mockResolvedValue(undefined),
+    lrange: vi.fn().mockResolvedValue([]),
+    zadd: vi.fn().mockResolvedValue(undefined),
+    zremrangebyrank: vi.fn().mockResolvedValue(undefined),
+    multi: vi.fn(),
     on: vi.fn(),
 }));
+
+// Chainable MULTI mock; records the pushed values
+const multiChain = vi.hoisted(() => {
+    const chain: any = {};
+    for (const m of ['rpush', 'ltrim', 'expire']) chain[m] = vi.fn(() => chain);
+    chain.exec = vi.fn().mockResolvedValue([]);
+    return chain;
+});
 
 vi.mock('ioredis', () => ({
     Redis: vi.fn(function (this: unknown) {
@@ -34,6 +46,7 @@ const createMockServer = () => ({
     on: vi.fn(),
     emit: vi.fn(),
     to: vi.fn().mockReturnThis(),
+    except: vi.fn().mockReturnThis(),
     sockets: {
         sockets: new Map(),
     },
@@ -45,6 +58,7 @@ describe('GameManager - Room Management', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        mockRedis.multi.mockReturnValue(multiChain);
         io = createMockServer();
         gameManager = new GameManager(io as any);
     });
@@ -696,12 +710,7 @@ describe('GameManager - Room Management', () => {
             // Start new round
             await (gameManager as any).startNewRound(roomId);
 
-            const roomAfter = await (gameManager as any).getRoom(roomId);
-
-            expect(roomAfter).not.toBeNull();
-            if (roomAfter) {
-                expect(roomAfter.strokes.length).toBe(0);
-            }
+            expect(mockRedis.del).toHaveBeenCalledWith(`strokes:${roomId}`);
         });
 
         it('should maintain single admin on restart', async () => {
@@ -839,6 +848,105 @@ describe('GameManager - Room Management', () => {
             // Expect redis del to be called for cleanup
             expect(mockRedis.del).toHaveBeenCalledWith(staleKey);
             expect(socket.emit).toHaveBeenCalledWith('error', expect.objectContaining({ message: 'Cannot reconnect - game has ended' }));
+        });
+    });
+
+    describe('Gameplay rules', () => {
+        // In-memory "rooms" hash so reads see earlier writes
+        let store: Record<string, string>;
+        const roomId = 'ROOM1';
+        const baseRoom = () => ({
+            id: roomId, name: 'R', currentRound: 1, totalRounds: 3, roundDuration: 60,
+            gameState: 'drawing', currentWord: 'cat', wordOptions: ['cat', 'dog', 'sun'],
+            drawingPlayerId: 'd', roundStartTime: Date.now(), customWords: [], revealedLetters: {},
+            isPublic: true, strokes: [],
+            players: [
+                { id: 'd', name: 'Drawer', avatar: '😀', clientId: 'cd', score: 0, isAdmin: true, isDrawing: true, hasGuessed: false, isReady: true },
+                { id: 'g1', name: 'Guess1', avatar: '😎', clientId: 'c1', score: 0, isAdmin: false, isDrawing: false, hasGuessed: false, isReady: true },
+                { id: 'g2', name: 'Guess2', avatar: '🤓', clientId: 'c2', score: 0, isAdmin: false, isDrawing: false, hasGuessed: false, isReady: true },
+            ],
+        });
+        const saved = () => JSON.parse(store[roomId]!);
+        const socketFor = (playerId: string) => {
+            const socket = createMockSocket(`s-${playerId}`) as any;
+            socket.data.playerId = playerId;
+            return socket;
+        };
+
+        beforeEach(() => {
+            store = { [roomId]: JSON.stringify(baseRoom()) };
+            mockRedis.hget.mockImplementation(async (_k: string, f: string) => store[f] ?? null);
+            mockRedis.hset.mockImplementation(async (_k: string, f: string, v: string) => { store[f] = v; });
+        });
+
+        it('scores a correct guess once, with the first-guess bonus', async () => {
+            const g1 = socketFor('g1');
+            await gameManager.handleMessage(g1, { roomId, content: 'CAT' });
+            expect(saved().players[1].score).toBe(150);
+
+            await gameManager.handleMessage(g1, { roomId, content: 'cat' });
+            expect(saved().players[1].score).toBe(150);
+
+            await gameManager.handleMessage(socketFor('g2'), { roomId, content: 'cat' });
+            expect(saved().players[2].score).toBe(100);
+        });
+
+        it('ignores strokes from players who are not drawing', async () => {
+            const stroke = { points: [{ x: 1, y: 1, color: '#000', size: 3 }], timestamp: 1 };
+            const guesser = socketFor('g1');
+            await gameManager.handleDrawSegment(guesser, { roomId, stroke });
+            expect(guesser.to).not.toHaveBeenCalled();
+            expect(multiChain.rpush).not.toHaveBeenCalled();
+
+            const drawer = socketFor('d');
+            await gameManager.handleDrawSegment(drawer, { roomId, stroke });
+            expect(multiChain.rpush).toHaveBeenCalledWith(`strokes:${roomId}`, JSON.stringify(stroke));
+            expect(drawer.to).toHaveBeenCalledWith(roomId);
+        });
+
+        it('rejects a word that is not one of the options, or mid-round', async () => {
+            store[roomId] = JSON.stringify({ ...baseRoom(), gameState: 'word-selection', currentWord: null });
+            const drawer = socketFor('d');
+            await gameManager.selectWord(drawer, { roomId, word: 'banana' });
+            expect(saved().gameState).toBe('word-selection');
+
+            await gameManager.selectWord(drawer, { roomId, word: 'dog' });
+            expect(saved().currentWord).toBe('dog');
+
+            await gameManager.selectWord(drawer, { roomId, word: 'sun' });
+            expect(saved().currentWord).toBe('dog');
+        });
+
+        it('never sends the secret word to guessers', async () => {
+            // Any room broadcast will do; the ready toggle is the simplest
+            (gameManager as any).playerRooms.set('s-g1', roomId);
+            store[roomId] = JSON.stringify(baseRoom());
+            await gameManager.setPlayerReady(socketFor('g1'));
+
+            const roomPayloads = io.emit.mock.calls
+                .filter(([event]: any[]) => event === SocketEvents.ROOM_UPDATED)
+                .map(([, payload]: any[]) => payload.room);
+            expect(io.except).toHaveBeenCalledWith('d');
+            expect(roomPayloads[0].currentWord).toBe('___');
+            expect(roomPayloads[0].wordOptions).toEqual([]);
+            expect(roomPayloads[1].currentWord).toBe('cat'); // second emit goes to the drawer only
+        });
+
+        it('does not restore stale admin or drawer flags on reconnect', async () => {
+            // Admin 'd' left; g1 was promoted. 'd' comes back from an old snapshot.
+            const room = baseRoom();
+            room.players = [{ ...room.players[1]!, isAdmin: true }];
+            room.drawingPlayerId = 'g1';
+            store[roomId] = JSON.stringify(room);
+            const stale = { ...baseRoom().players[0]!, isAdmin: true, isDrawing: true };
+            mockRedis.get.mockReset().mockResolvedValue(JSON.stringify({ player: stale, roomId, disconnectedAt: Date.now() }));
+
+            await gameManager.joinRoom(createMockSocket('s-new') as any, { roomId, playerName: 'Drawer', playerAvatar: '😀', clientId: 'cd' });
+
+            const back = saved().players.find((p: any) => p.id === 'd');
+            expect(back.isAdmin).toBe(false);
+            expect(back.isDrawing).toBe(false);
+            expect(saved().players.filter((p: any) => p.isAdmin)).toHaveLength(1);
         });
     });
 });

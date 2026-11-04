@@ -1,4 +1,4 @@
-.PHONY: install dev-web dev-server dev test build clean
+.PHONY: install dev-web dev-server dev test build clean bump-patch bump-minor bump-major
 
 install:
 	pnpm install
@@ -25,7 +25,7 @@ build:
 	pnpm -r build
 
 docker-build:
-	docker compose build --build-arg VITE_SERVER_URL=$(shell grep VITE_SERVER_URL .env | cut -d '=' -f2)
+	docker compose build
 
 docker-up:
 	docker compose up -d
@@ -38,16 +38,22 @@ docker-logs:
 
 deploy: docker-build docker-up
 
+# Bump the app version (root package.json). Merging to main tags and releases v<version>.
+bump-patch bump-minor bump-major:
+	@npm version $(subst bump-,,$@) --no-git-tag-version >/dev/null
+	@echo "Version is now $$(node -p "require('./package.json').version") - commit it in your PR to main"
+
 help:
 	@echo "Available commands:"
 	@echo "  make install       - Install dependencies"
 	@echo "  make dev           - Run both apps in dev mode"
 	@echo "  make test          - Run all tests"
 	@echo "  make build         - Build all apps"
-	@echo "  make docker-build  - Build docker images"
+	@echo "  make docker-build  - Build the docker image"
 	@echo "  make docker-up     - Start docker containers"
 	@echo "  make docker-down   - Stop docker containers"
 	@echo "  make clean         - Remove node_modules and dist folders"
+	@echo "  make bump-patch    - Bump version (also bump-minor, bump-major)"
 
 clean:
 	rm -rf node_modules apps/*/node_modules packages/*/node_modules

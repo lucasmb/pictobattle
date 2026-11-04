@@ -22,11 +22,11 @@ export function PlayerSetup({ onComplete }: PlayerSetupProps) {
     };
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-primary via-secondary to-accent flex items-center justify-center p-4">
+        <div className="min-h-screen flex items-center justify-center p-4">
             <div className="card w-full max-w-md bg-base-100 shadow-2xl">
                 <div className="card-body">
-                    <h1 className="text-4xl font-bold text-center mb-2 bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
-                        PictoBattle
+                    <h1 className="text-6xl text-center mb-2 -rotate-2">
+                        Picto<span className="text-primary">Battle</span>
                     </h1>
                     <p className="text-center text-base-content/70 mb-6">
                         Join the fun! Draw, guess, and win!

@@ -13,7 +13,7 @@ A real-time multiplayer Pictionary game built with React 19, Node.js, Socket.io,
 - 🎯 5-round game flow
 - 📊 Live scoreboard
 - 🔌 **Robust Reconnection**: Persist game state even if you refresh or disconnect
-- 🚀 **Horizontal Scaling**: Redis Pub/Sub enabled for multi-instance support
+- 🗄️ **Redis-backed state**: rooms, canvas history and high scores live in Redis (single server instance)
 
 ## Tech Stack
 
@@ -86,6 +86,14 @@ CLIENT_URL=http://localhost:5173
 ```
 VITE_SERVER_URL=http://localhost:3001
 ```
+
+## Releasing
+
+The version in the root `package.json` is the app version.
+
+1. On `dev`, bump it: `make bump-patch` (or `bump-minor` / `bump-major`) and commit.
+2. Open a PR into `main`. The **Version Check** workflow fails if that version was already released.
+3. On merge, CI builds and pushes `ghcr.io/<repo>:<version>`, deploys it, then tags the commit `v<version>` and creates a GitHub release with generated notes.
 
 ## License
 

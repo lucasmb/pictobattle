@@ -35,10 +35,10 @@ export function Lobby() {
     };
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-primary via-secondary to-accent flex items-center justify-center p-4">
+        <div className="min-h-screen flex items-center justify-center p-4">
             <div className="card w-full max-w-2xl bg-base-100 shadow-2xl">
                 <div className="card-body">
-                    <h2 className="text-3xl font-bold text-center mb-6">Game Lobby</h2>
+                    <h2 className="text-5xl text-center mb-6 -rotate-1">Game <span className="text-primary">Lobby</span></h2>
 
                     {error && (
                         <div className="alert alert-error mb-4">

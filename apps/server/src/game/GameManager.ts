@@ -7,10 +7,9 @@ import {
   DEFAULT_WORDS,
   KICK_COUNTDOWN_DURATION,
   RECONNECT_WINDOW_DURATION,
-  MIN_ROUNDS,
-  MAX_ROUNDS,
   MAX_PLAYERS,
   MAX_STORED_STROKES,
+  WORD_SELECTION_DURATION,
 } from "@pictobattle/shared";
 import type {
   Room,
@@ -19,6 +18,7 @@ import type {
   JoinRoomPayload,
   SelectWordPayload,
   DrawPayload,
+  DrawStroke,
   SendMessagePayload,
   KickPlayerPayload,
   Message,
@@ -42,9 +42,8 @@ import {
 
 export class GameManager {
   private redis: Redis;
-  private rooms: Map<string, Room> = new Map(); // Local cache for timers
   private playerRooms: Map<string, string> = new Map(); // socketId -> roomId
-  private roundTimers: Map<string, NodeJS.Timeout> = new Map();
+  private roundTimers: Map<string, NodeJS.Timeout> = new Map(); // roomId -> word-pick, round or between-round timer
   private startGameTimers: Map<string, NodeJS.Timeout> = new Map(); // roomId -> countdown timer
   private emptyRoomTimers: Map<string, NodeJS.Timeout> = new Map(); // roomId -> cleanup timer for empty rooms
 
@@ -54,6 +53,9 @@ export class GameManager {
     this.redis.on("error", (err: Error) => {
       console.error("Redis Error:", err);
     });
+
+    // Single instance: timers and sockets die with the process, so rooms left from a previous run can't be resumed
+    this.redis.del("rooms");
 
     this.io.on("connection", (socket) => {
       console.log("Client connected:", socket.id);
@@ -73,11 +75,6 @@ export class GameManager {
       socket.on(SocketEvents.SELECT_WORD, (payload) =>
         this.validateAndRun(socket, selectWordSchema, payload, (p) =>
           this.selectWord(socket, p),
-        ),
-      );
-      socket.on(SocketEvents.DRAW, (payload) =>
-        this.validateAndRun(socket, drawPayloadSchema, payload, (p) =>
-          this.handleDraw(socket, p),
         ),
       );
       socket.on(SocketEvents.DRAW_SEGMENT, (payload) =>
@@ -125,7 +122,34 @@ export class GameManager {
 
   private async updateRoom(roomId: string, room: Room) {
     await this.redis.hset("rooms", roomId, JSON.stringify(room));
-    this.rooms.set(roomId, room);
+  }
+
+  // Strokes live in their own list so drawing never rewrites (and races with) the room record
+  private strokesKey(roomId: string) {
+    return `strokes:${roomId}`;
+  }
+
+  private async getStrokes(roomId: string): Promise<DrawStroke[]> {
+    const items = await this.redis.lrange(this.strokesKey(roomId), 0, -1);
+    return items.map((s) => JSON.parse(s) as DrawStroke);
+  }
+
+  // What everyone except the drawer sees: no secret word, options or word list
+  private hideWord(room: Room): Room {
+    return {
+      ...room,
+      currentWord: room.currentWord?.replace(/[^ -]/g, "_") ?? null,
+      wordOptions: [],
+      customWords: [],
+    };
+  }
+
+  // Each socket also joins a room named after its playerId, so the drawer can be addressed directly
+  private emitRoom(roomId: string, room: Room, event: string, extra: object = {}) {
+    const drawerId = room.drawingPlayerId;
+    const others = drawerId ? this.io.to(roomId).except(drawerId) : this.io.to(roomId);
+    others.emit(event, { ...extra, room: this.hideWord(room) });
+    if (drawerId) this.io.to(drawerId).emit(event, { ...extra, room });
   }
 
   private async getRoom(roomId: string): Promise<Room | null> {
@@ -141,39 +165,30 @@ export class GameManager {
 
   private async deleteRoom(roomId: string) {
     await this.redis.hdel("rooms", roomId);
-    this.rooms.delete(roomId);
+    await this.redis.del(this.strokesKey(roomId));
+  }
+
+  private async roomList() {
+    const roomsData = await this.redis.hgetall("rooms");
+    return Object.values(roomsData)
+      .map((data) => JSON.parse(data) as Room)
+      .filter((r) => r.gameState === "lobby" && r.isPublic)
+      .map((r) => ({
+        id: r.id,
+        name: r.name,
+        players: r.players.length,
+        maxPlayers: MAX_PLAYERS,
+        gameState: r.gameState,
+        isPublic: r.isPublic,
+      }));
   }
 
   private async sendRoomList(socket: Socket) {
-    const roomsData = await this.redis.hgetall("rooms");
-    const roomsList = Object.values(roomsData)
-      .map((data) => JSON.parse(data) as Room)
-      .filter((r) => r.gameState === "lobby" && r.isPublic)
-      .map((r) => ({
-        id: r.id,
-        name: r.name,
-        players: r.players.length,
-        maxPlayers: MAX_PLAYERS,
-        gameState: r.gameState,
-        isPublic: r.isPublic,
-      }));
-    socket.emit(SocketEvents.ROOMS_LIST, { rooms: roomsList });
+    socket.emit(SocketEvents.ROOMS_LIST, { rooms: await this.roomList() });
   }
 
   private async broadcastRoomList() {
-    const roomsData = await this.redis.hgetall("rooms");
-    const roomsList = Object.values(roomsData)
-      .map((data) => JSON.parse(data) as Room)
-      .filter((r) => r.gameState === "lobby" && r.isPublic)
-      .map((r) => ({
-        id: r.id,
-        name: r.name,
-        players: r.players.length,
-        maxPlayers: MAX_PLAYERS,
-        gameState: r.gameState,
-        isPublic: r.isPublic,
-      }));
-    this.io.emit(SocketEvents.ROOMS_LIST, { rooms: roomsList });
+    this.io.emit(SocketEvents.ROOMS_LIST, { rooms: await this.roomList() });
   }
 
   async createRoom(socket: Socket, payload: CreateRoomPayload) {
@@ -192,9 +207,8 @@ export class GameManager {
       isReady: false,
     };
 
-    // Validate and set total rounds (3-10)
-    let totalRounds = payload.totalRounds || DEFAULT_GAME_SETTINGS.totalRounds;
-    totalRounds = Math.max(MIN_ROUNDS, Math.min(MAX_ROUNDS, totalRounds));
+    // Range already enforced by createRoomSchema
+    const totalRounds = payload.totalRounds || DEFAULT_GAME_SETTINGS.totalRounds;
 
     const room: Room = {
       id: roomId,
@@ -219,6 +233,7 @@ export class GameManager {
     socket.data.playerId = playerId;
 
     socket.join(roomId);
+    socket.join(playerId);
     socket.emit(SocketEvents.ROOM_CREATED, { roomId, room });
 
     await this.broadcastRoomList();
@@ -295,12 +310,15 @@ export class GameManager {
 
     this.playerRooms.set(socket.id, payload.roomId);
     socket.join(payload.roomId);
+    socket.join(playerId);
     socket.data.playerId = playerId;
 
-    socket.emit(SocketEvents.ROOM_JOINED, { room });
+    socket.emit(SocketEvents.ROOM_JOINED, {
+      room: { ...this.hideWord(room), strokes: await this.getStrokes(payload.roomId) },
+    });
     this.io.to(payload.roomId).emit(SocketEvents.PLAYER_JOINED, { player });
     await this.broadcastRoomList();
-    this.io.to(payload.roomId).emit(SocketEvents.ROOM_UPDATED, { room });
+    this.emitRoom(payload.roomId, room, SocketEvents.ROOM_UPDATED);
   }
 
   async leaveRoom(socket: Socket) {
@@ -321,6 +339,7 @@ export class GameManager {
 
     // Leave the socket room immediately so they don't receive the update events
     socket.leave(roomId);
+    if (playerId) socket.leave(playerId);
     this.playerRooms.delete(socket.id);
 
     if (room.players.length === 0) {
@@ -355,7 +374,7 @@ export class GameManager {
 
       await this.updateRoom(roomId, room);
       this.io.to(roomId).emit(SocketEvents.PLAYER_LEFT, { playerId });
-      this.io.to(roomId).emit(SocketEvents.ROOM_UPDATED, { room });
+      this.emitRoom(roomId, room, SocketEvents.ROOM_UPDATED);
     }
   }
 
@@ -520,7 +539,7 @@ export class GameManager {
     });
 
     await this.updateRoom(roomId, room);
-    this.io.to(roomId).emit(SocketEvents.GAME_STARTED, { room });
+    this.emitRoom(roomId, room, SocketEvents.GAME_STARTED);
     await this.startNewRound(roomId);
   }
 
@@ -531,7 +550,7 @@ export class GameManager {
     room.players.forEach((p) => {
       p.isDrawing = false;
     });
-    room.strokes = []; // Clear canvas history for new round
+    await this.redis.del(this.strokesKey(roomId)); // Clear canvas history for new round
     this.io.to(roomId).emit(SocketEvents.CANVAS_CLEARED);
 
     if (room.players.length === 0) return;
@@ -564,7 +583,16 @@ export class GameManager {
 
     room.gameState = "word-selection";
     await this.updateRoom(roomId, room);
-    this.io.to(roomId).emit(SocketEvents.ROUND_START, { room });
+    this.emitRoom(roomId, room, SocketEvents.ROUND_START);
+
+    // A drawer who never picks (idle or gone) would freeze the room; pick for them
+    this.setRoomTimer(roomId, WORD_SELECTION_DURATION * 1000, async () => {
+      const current = await this.getRoom(roomId);
+      const word = current?.wordOptions[0];
+      if (current?.gameState === "word-selection" && word) {
+        await this.applyWord(roomId, current, word);
+      }
+    });
   }
 
   async selectWord(socket: Socket, payload: SelectWordPayload) {
@@ -579,32 +607,40 @@ export class GameManager {
       return;
     }
 
-    room.currentWord = payload.word;
+    if (
+      room.gameState !== "word-selection" ||
+      !room.wordOptions.includes(payload.word)
+    ) {
+      socket.emit(SocketEvents.ERROR, { message: "Invalid word choice" });
+      return;
+    }
+
+    await this.applyWord(payload.roomId, room, payload.word);
+  }
+
+  private async applyWord(roomId: string, room: Room, word: string) {
+    room.currentWord = word;
     room.gameState = "drawing";
     room.roundStartTime = Date.now();
 
-    await this.updateRoom(payload.roomId, room);
+    await this.updateRoom(roomId, room);
 
-    socket.emit(SocketEvents.WORD_SELECTED, { word: payload.word });
-    socket.to(payload.roomId).emit(SocketEvents.WORD_SELECTED, {
-      word: payload.word.replace(/./g, "_"),
-      wordLength: payload.word.length,
-    });
+    if (room.drawingPlayerId) {
+      this.io.to(room.drawingPlayerId).emit(SocketEvents.WORD_SELECTED, { word });
+      this.io.to(roomId).except(room.drawingPlayerId).emit(SocketEvents.WORD_SELECTED, {
+        word: word.replace(/./g, "_"),
+        wordLength: word.length,
+      });
+    }
 
-    this.io.to(payload.roomId).emit(SocketEvents.ROOM_UPDATED, { room });
-    this.startRoundTimer(payload.roomId);
+    this.emitRoom(roomId, room, SocketEvents.ROOM_UPDATED);
+    this.setRoomTimer(roomId, room.roundDuration * 1000, () => this.endRound(roomId));
   }
 
-  private startRoundTimer(roomId: string) {
+  // One timer per room (word pick, round, or pause between rounds); restart/cleanup cancel it via clearRoundTimer
+  private setRoomTimer(roomId: string, ms: number, run: () => unknown) {
     this.clearRoundTimer(roomId);
-    const roomRef = this.rooms.get(roomId); // Use local cache for timer duration
-    if (!roomRef) return;
-
-    const timer = setTimeout(() => {
-      this.endRound(roomId);
-    }, roomRef.roundDuration * 1000);
-
-    this.roundTimers.set(roomId, timer);
+    this.roundTimers.set(roomId, setTimeout(run, ms));
   }
 
   private clearRoundTimer(roomId: string) {
@@ -617,7 +653,8 @@ export class GameManager {
 
   private async endRound(roomId: string) {
     const room = await this.getRoom(roomId);
-    if (!room) return;
+    // Guard: the round timer and the last correct guess can both end the round
+    if (!room || room.gameState !== "drawing") return;
 
     this.clearRoundTimer(roomId);
     room.gameState = "round-end";
@@ -633,15 +670,15 @@ export class GameManager {
     });
 
     if (room.currentRound >= room.totalRounds) {
-      setTimeout(() => this.endGame(roomId), 5000);
+      this.setRoomTimer(roomId, 5000, () => this.endGame(roomId));
     } else {
-      setTimeout(async () => {
+      this.setRoomTimer(roomId, 5000, async () => {
         const updatedRoom = await this.getRoom(roomId);
         if (!updatedRoom) return;
         updatedRoom.currentRound++;
         await this.updateRoom(roomId, updatedRoom);
         await this.startNewRound(roomId);
-      }, 5000);
+      });
     }
   }
 
@@ -668,12 +705,12 @@ export class GameManager {
 
     await this.updateRoom(roomId, room);
     this.io.to(roomId).emit(SocketEvents.GAME_END, { scores: finalScores });
-    this.io.to(roomId).emit(SocketEvents.ROOM_UPDATED, { room });
+    this.emitRoom(roomId, room, SocketEvents.ROOM_UPDATED);
   }
 
   private async recordHighScore(name: string, score: number) {
-    // We use a simple playerName as identity.
-    await this.redis.zadd("high_scores", score, name);
+    // We use a simple playerName as identity; GT keeps a player's best score
+    await this.redis.zadd("high_scores", "GT", score, name);
     // Trim to top 20
     await this.redis.zremrangebyrank("high_scores", 0, -21);
   }
@@ -695,28 +732,21 @@ export class GameManager {
     socket.emit("high_scores_list", { scores: formattedScores });
   }
 
-  async handleDraw(socket: Socket, payload: DrawPayload) {
+  async handleDrawSegment(socket: Socket, payload: DrawPayload) {
     const room = await this.getRoom(payload.roomId);
-    if (!room) return;
+    if (!room || room.gameState !== "drawing") return;
 
     const player = room.players.find((p) => p.id === socket.data.playerId);
     if (!player || !player.isDrawing) return;
 
-    socket
-      .to(payload.roomId)
-      .emit(SocketEvents.DRAW_UPDATE, { stroke: payload.stroke });
-  }
-
-  async handleDrawSegment(socket: Socket, payload: DrawPayload) {
-    // Store stroke in room for reconnection support
-    const room = await this.getRoom(payload.roomId);
-    if (room) {
-      room.strokes.push(payload.stroke);
-      if (room.strokes.length > MAX_STORED_STROKES) {
-        room.strokes.splice(0, room.strokes.length - MAX_STORED_STROKES);
-      }
-      await this.updateRoom(payload.roomId, room);
-    }
+    // Stored for players who join or reconnect mid-round; expire covers rooms that vanish uncleanly
+    const key = this.strokesKey(payload.roomId);
+    await this.redis
+      .multi()
+      .rpush(key, JSON.stringify(payload.stroke))
+      .ltrim(key, -MAX_STORED_STROKES, -1)
+      .expire(key, 3600)
+      .exec();
 
     // Broadcast to other players
     socket
@@ -735,6 +765,7 @@ export class GameManager {
     )
       return;
 
+    await this.redis.del(this.strokesKey(roomId));
     this.io.to(roomId).emit(SocketEvents.CANVAS_CLEARED);
   }
 
@@ -870,7 +901,7 @@ export class GameManager {
     room.wordOptions = [];
     room.drawingPlayerId = null;
     room.roundStartTime = null;
-    room.strokes = []; // Clear canvas history
+    await this.redis.del(this.strokesKey(roomId)); // Clear canvas history
 
     // Ensure only one admin exists (the current one or the first player)
     let adminFound = false;
@@ -895,7 +926,7 @@ export class GameManager {
 
     this.clearRoundTimer(roomId);
     await this.updateRoom(roomId, room);
-    this.io.to(roomId).emit(SocketEvents.ROOM_UPDATED, { room });
+    this.emitRoom(roomId, room, SocketEvents.ROOM_UPDATED);
     console.log(`Game restarted in room ${roomId}`);
   }
 
@@ -915,7 +946,7 @@ export class GameManager {
       playerId: player.id,
       isReady: player.isReady,
     });
-    this.io.to(roomId).emit(SocketEvents.ROOM_UPDATED, { room });
+    this.emitRoom(roomId, room, SocketEvents.ROOM_UPDATED);
   }
 
   async kickPlayer(socket: Socket, payload: KickPlayerPayload) {
@@ -995,16 +1026,8 @@ export class GameManager {
 
     if (!data) return null;
 
-    const disconnected = JSON.parse(data);
-
-    // Check if still within reconnection window
-    const elapsed = (Date.now() - disconnected.disconnectedAt) / 1000;
-    if (elapsed > RECONNECT_WINDOW_DURATION) {
-      await this.redis.del(key);
-      return null;
-    }
-
-    return disconnected.player;
+    // SETEX expires the record after RECONNECT_WINDOW_DURATION
+    return JSON.parse(data).player;
   }
 
   private async reconnectPlayer(
@@ -1056,18 +1079,29 @@ export class GameManager {
     const key = `disconnected:${roomId}:${player.clientId}`;
     await this.redis.del(key);
 
+    // The snapshot's flags are stale: admin may have moved on, and the drawer may have changed
+    player.isAdmin =
+      room.players.length === 0 ||
+      (player.isAdmin && !room.players.some((p) => p.isAdmin));
+    player.isDrawing = room.drawingPlayerId === player.id;
+
     // Add player back to room
     room.players.push(player);
     await this.updateRoom(roomId, room);
 
     this.playerRooms.set(socket.id, roomId);
     socket.join(roomId);
+    socket.join(player.id);
     socket.data.playerId = player.id;
 
     // Notify everyone
-    socket.emit(SocketEvents.ROOM_JOINED, { room, reconnected: true });
+    const view = player.isDrawing ? room : this.hideWord(room);
+    socket.emit(SocketEvents.ROOM_JOINED, {
+      room: { ...view, strokes: await this.getStrokes(roomId) },
+      reconnected: true,
+    });
     this.io.to(roomId).emit(SocketEvents.PLAYER_RECONNECTED, { player });
-    this.io.to(roomId).emit(SocketEvents.ROOM_UPDATED, { room });
+    this.emitRoom(roomId, room, SocketEvents.ROOM_UPDATED);
 
     console.log(`${player.name} reconnected to room ${roomId}`);
   }

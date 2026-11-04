@@ -1,26 +1,17 @@
 import express from "express";
 import { createServer } from "http";
 import { Server } from "socket.io";
-import { createAdapter } from "@socket.io/redis-adapter";
-import { Redis } from "ioredis";
 import cors from "cors";
+import path from "path";
 import { GameManager } from "./game/GameManager.ts";
-import { getRedisOptions } from "./config/redis.ts";
 
 const app = express();
 const httpServer = createServer(app);
 
-// Redis Pub/Sub for horizontal scaling
-// This allows multiple server instances to communicate through Redis
-const pubClient = new Redis(getRedisOptions());
-const subClient = pubClient.duplicate();
-
-pubClient.on("error", (err: Error) => {
-  console.error("Redis Pub Client Error:", err);
-});
-
-subClient.on("error", (err: Error) => {
-  console.error("Redis Sub Client Error:", err);
+// Single instance by design: game timers and socket lookups live in this process's memory.
+// Log instead of crash when an async socket handler fails (e.g. Redis briefly unreachable).
+process.on("unhandledRejection", (err) => {
+  console.error("Unhandled rejection:", err);
 });
 
 const io = new Server(httpServer, {
@@ -30,12 +21,11 @@ const io = new Server(httpServer, {
   },
 });
 
-// Enable Redis adapter for pub/sub across multiple instances
-io.adapter(createAdapter(pubClient, subClient));
-console.log(`📡 Redis Pub/Sub adapter enabled for horizontal scaling`);
-
 app.use(cors());
 app.use(express.json());
+
+// Serve the web build (Docker copies it to ./public next to the bundled server); no-op in dev
+app.use(express.static(path.join(import.meta.dirname, "public")));
 
 const gameManager = new GameManager(io);
 
@@ -48,18 +38,11 @@ const PORT = process.env.PORT || 3001;
 
 httpServer.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  console.log(
-    `🔄 Horizontal scaling: ${process.env.REDIS_HOST ? "Enabled" : "Disabled (Redis not configured)"}`,
-  );
 });
 
 const shutdown = () => {
   console.log("Shutting down gracefully...");
-  httpServer.close(() => {
-    pubClient.disconnect();
-    subClient.disconnect();
-    process.exit(0);
-  });
+  httpServer.close(() => process.exit(0));
   setTimeout(() => process.exit(1), 10000).unref();
 };
 

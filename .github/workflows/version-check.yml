@@ -1,0 +1,20 @@
+name: Version Check
+
+# Fails a PR into main early if the version in package.json was not bumped
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  version-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ensure version is new
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null; then
+            echo "::error::v$VERSION is already released. Bump the version (make bump-patch|bump-minor|bump-major)."
+            exit 1
+          fi
+          echo "Will release v$VERSION"
