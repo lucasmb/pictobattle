@@ -103,7 +103,6 @@ export enum SocketEvents {
     WORD_HINT_UPDATE = 'word_hint_update',
 
     // Drawing
-    DRAW = 'draw',
     DRAW_SEGMENT = 'draw_segment',
     DRAW_UPDATE = 'draw_update',
     CLEAR_CANVAS = 'clear_canvas',

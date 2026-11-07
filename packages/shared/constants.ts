@@ -7,6 +7,7 @@ export const DEFAULT_GAME_SETTINGS = {
 
 export const KICK_COUNTDOWN_DURATION = 60; // seconds to wait before kicking not-ready players
 export const RECONNECT_WINDOW_DURATION = 300; // 5 minutes in seconds for player reconnection
+export const WORD_SELECTION_DURATION = 15; // seconds before a word is picked for an idle drawer
 export const MIN_ROUNDS = 3;
 export const MAX_ROUNDS = 10;
 export const MAX_PLAYERS = 10;

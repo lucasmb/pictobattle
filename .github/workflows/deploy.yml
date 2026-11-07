@@ -7,13 +7,11 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  # IMAGE_NAME_SERVER: ${{ github.repository }}-server
-  # IMAGE_NAME_WEB: ${{ github.repository }}-web
   IMAGE_BASE: ${{ github.repository }}
   PORT: 4000
 
 jobs:
-  # 1. Extract version once
+  # 1. Extract version once (root package.json is the single source of truth)
   setup:
     runs-on: ubuntu-latest
     outputs:
@@ -24,22 +22,22 @@ jobs:
       - id: get_version
         run: echo "VERSION=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
 
+      # Every merge to main must bump the version; manual re-runs may redeploy an existing one
+      - name: Ensure version is new
+        if: github.event_name == 'push'
+        run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/v${{ steps.get_version.outputs.VERSION }}" >/dev/null; then
+            echo "::error::v${{ steps.get_version.outputs.VERSION }} is already released. Bump the version (make bump-patch|bump-minor|bump-major)."
+            exit 1
+          fi
+
       # This ensures the image name is lowercase (Required by Docker)
       - id: lowercase
-        run: echo "IMAGE_BASE=${GITHUB_REPOSITORY@L}" >> $GITHUB_OUTPUT # 2. Build images in parallel
+        run: echo "IMAGE_BASE=${GITHUB_REPOSITORY@L}" >> $GITHUB_OUTPUT # 2. Build the image
 
   build-and-push:
     needs: setup
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - service: server
-            context: .
-            dockerfile: apps/server/Dockerfile
-          - service: web
-            context: .
-            dockerfile: apps/web/Dockerfile
 
     permissions:
       contents: read
@@ -59,11 +57,19 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Base images come from dhi.io, which requires an authenticated (free) account
+      - name: Log in to Docker Hardened Images
+        uses: docker/login-action@v3
+        with:
+          registry: dhi.io
+          username: ${{ secrets.DHI_USER }}
+          password: ${{ secrets.DHI_TOKEN }}
+
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ needs.setup.outputs.lower_image_base }}-${{ matrix.service }}
+          images: ${{ env.REGISTRY }}/${{ needs.setup.outputs.lower_image_base }}
           tags: |
             type=raw,value=latest
             type=raw,value=${{ needs.setup.outputs.version }}
@@ -72,15 +78,14 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v5
         with:
-          context: ${{ matrix.context }}
-          file: ${{ matrix.dockerfile }}
+          context: .
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
-            VITE_SERVER_URL=${{ secrets.VITE_SERVER_URL }}
+            VITE_GA_ID=${{ vars.GA_MEASUREMENT_ID }}
 
   deploy:
     needs: [setup, build-and-push]
@@ -113,14 +118,31 @@ jobs:
             cat <<EOF > .env
             PORT=${{ env.PORT }}
             CLIENT_URL=${{ secrets.CLIENT_URL }}
-            VITE_SERVER_URL=${{ secrets.VITE_SERVER_URL }}
-            SERVER_IMAGE=${{ env.REGISTRY }}/${{ needs.setup.outputs.lower_image_base }}-server:${{ needs.setup.outputs.version }}
-            WEB_IMAGE=${{ env.REGISTRY }}/${{ needs.setup.outputs.lower_image_base }}-web:${{ needs.setup.outputs.version }}
+            APP_IMAGE=${{ env.REGISTRY }}/${{ needs.setup.outputs.lower_image_base }}:${{ needs.setup.outputs.version }}
             EOF
 
             # Log in to registry on VPS
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ${{ env.REGISTRY }} -u ${{ github.actor }} --password-stdin
+            echo "${{ secrets.DHI_TOKEN }}" | docker login dhi.io -u "${{ secrets.DHI_USER }}" --password-stdin
 
             docker compose pull
-            docker compose up -d
+            docker compose up -d --remove-orphans
             docker image prune -f
+
+  # 4. Tag the deployed commit and publish a GitHub release
+  release:
+    needs: [setup, deploy]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Create tag and release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: v${{ needs.setup.outputs.version }}
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "$TAG already released, skipping"
+          else
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "$TAG" --generate-notes
+          fi

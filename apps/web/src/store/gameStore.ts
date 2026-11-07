@@ -38,6 +38,7 @@ interface GameState {
 
     // Canvas
     strokes: DrawStroke[];
+    hintWord: string | null; // this player's own hint (server only sends guessers a masked word)
 
     // UI
     error: string | null;
@@ -53,7 +54,6 @@ interface GameState {
     leaveRoom: () => void;
     startGame: () => void;
     selectWord: (word: string) => void;
-    sendDraw: (stroke: DrawStroke) => void;
     sendDrawSegment: (stroke: DrawStroke) => void;
     clearCanvas: () => void;
     sendMessage: (content: string) => void;
@@ -126,6 +126,7 @@ export const useGameStore = create<GameState>((set, get) => ({
 
     messages: [],
     strokes: [],
+    hintWord: null,
 
     error: null,
     isLoading: false,
@@ -133,8 +134,9 @@ export const useGameStore = create<GameState>((set, get) => ({
 
     // Connect to server
     connect: () => {
-        const serverUrl = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001';
-        console.log('Connecting to server at:', serverUrl);
+        // Production build is served by the server itself, so undefined = same origin
+        const serverUrl = import.meta.env.VITE_SERVER_URL || (import.meta.env.DEV ? 'http://localhost:3001' : undefined);
+        console.log('Connecting to server at:', serverUrl ?? window.location.origin);
 
         const socket = io(serverUrl, {
             transports: ['websocket'],
@@ -229,7 +231,7 @@ export const useGameStore = create<GameState>((set, get) => ({
         });
 
         socket.on('round_start' as any, ({ room }: { room: Room }) => {
-            set({ room, strokes: [], messages: [], startGameCountdown: null });
+            set({ room, strokes: [], messages: [], hintWord: null, startGameCountdown: null });
         });
 
         socket.on('word_selected' as any, ({ word }: { word: string }) => {
@@ -316,18 +318,8 @@ export const useGameStore = create<GameState>((set, get) => ({
             }));
         });
 
-        socket.on(SocketEvents.WORD_HINT_UPDATE, ({ revealedPositions }: { revealedPositions: number[] }) => {
-            const { room, currentPlayerId } = get();
-            if (!room || !currentPlayerId) return;
-
-            const updatedRoom = {
-                ...room,
-                revealedLetters: {
-                    ...room.revealedLetters,
-                    [currentPlayerId]: revealedPositions
-                }
-            };
-            set({ room: updatedRoom });
+        socket.on(SocketEvents.WORD_HINT_UPDATE, ({ hintWord }: { hintWord: string }) => {
+            set({ hintWord });
         });
 
         // New feature events
@@ -424,16 +416,6 @@ export const useGameStore = create<GameState>((set, get) => ({
 
         const payload: SelectWordPayload = { roomId, word };
         socket.emit('select_word' as any, payload);
-    },
-
-    // Send draw
-    sendDraw: (stroke: DrawStroke) => {
-        const { socket, roomId } = get();
-        if (!socket || !roomId) return;
-
-        set((state) => ({ strokes: [...state.strokes, stroke] }));
-        const payload: DrawPayload = { roomId, stroke };
-        socket.emit(SocketEvents.DRAW, payload);
     },
 
     // Send draw segment (real-time)

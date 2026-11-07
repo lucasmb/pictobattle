@@ -12,7 +12,7 @@ export function Canvas() {
     const [isEraser, setIsEraser] = useState(false);
     const lastPointRef = useRef<DrawPoint | null>(null);
     const prevStrokesCountRef = useRef(0);
-    const { room, strokes, sendDrawSegment, clearCanvas } = useGameStore();
+    const { room, strokes, hintWord, sendDrawSegment, clearCanvas } = useGameStore();
     const currentPlayerId = useGameStore((state) => state.currentPlayerId);
 
     // Check if the CURRENT user is the drawer
@@ -179,18 +179,12 @@ export function Canvas() {
                             </p>
                         ) : (
                             <p className="text-lg font-mono tracking-widest">
-                                {room.currentWord.split('').map((char, i) => {
-                                    const revealedIndices = room.revealedLetters?.[currentPlayer?.id || ''] || [];
-                                    const isRevealed = revealedIndices.includes(i);
-                                    const isSpecial = char === ' ' || char === '-';
-
-                                    return (
-                                        <span key={i} className={isRevealed ? "text-primary font-bold" : ""}>
-                                            {isRevealed || isSpecial ? char : '_'}
-                                            {' '}
-                                        </span>
-                                    );
-                                })}
+                                {/* Guessers get a masked word; hintWord adds the letters this player has uncovered */}
+                                {(hintWord ?? room.currentWord).split('').map((char, i) => (
+                                    <span key={i} className={/[^_ -]/.test(char) ? "text-primary font-bold" : ""}>
+                                        {char}{' '}
+                                    </span>
+                                ))}
                             </p>
                         )}
                     </div>
