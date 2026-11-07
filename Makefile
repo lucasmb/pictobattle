@@ -33,6 +33,13 @@ docker-up:
 docker-down:
 	docker compose down
 
+# Prod image on http://localhost:4000 (docker-compose.yml has no ports; Caddy proxies it)
+docker-local:
+	docker compose -f docker-compose.dev.yml up -d --build
+
+docker-local-down:
+	docker compose -f docker-compose.dev.yml down
+
 docker-logs:
 	docker compose logs -f
 
@@ -52,6 +59,7 @@ help:
 	@echo "  make docker-build  - Build the docker image"
 	@echo "  make docker-up     - Start docker containers"
 	@echo "  make docker-down   - Stop docker containers"
+	@echo "  make docker-local  - Run the prod image on http://localhost:4000"
 	@echo "  make clean         - Remove node_modules and dist folders"
 	@echo "  make bump-patch    - Bump version (also bump-minor, bump-major)"
 

@@ -1,11 +1,11 @@
 services:
   redis:
-    image: redis:8-alpine
+    image: dhi.io/redis:8
     ports:
       - "6379:6379"
     volumes:
       - redis_data:/data
-    command: redis-server --appendonly yes
+    command: ["redis-server", "--appendonly", "yes"]
 
 volumes:
   redis_data:

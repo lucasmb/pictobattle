@@ -57,6 +57,14 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Base images come from dhi.io, which requires an authenticated (free) account
+      - name: Log in to Docker Hardened Images
+        uses: docker/login-action@v3
+        with:
+          registry: dhi.io
+          username: ${{ secrets.DHI_USER }}
+          password: ${{ secrets.DHI_TOKEN }}
+
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -76,6 +84,8 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          build-args: |
+            VITE_GA_ID=${{ vars.GA_MEASUREMENT_ID }}
 
   deploy:
     needs: [setup, build-and-push]
@@ -113,6 +123,7 @@ jobs:
 
             # Log in to registry on VPS
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ${{ env.REGISTRY }} -u ${{ github.actor }} --password-stdin
+            echo "${{ secrets.DHI_TOKEN }}" | docker login dhi.io -u "${{ secrets.DHI_USER }}" --password-stdin
 
             docker compose pull
             docker compose up -d --remove-orphans

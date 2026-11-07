@@ -16,7 +16,8 @@ services:
       - redis
 
   redis:
-    image: redis:8-alpine
+    image: dhi.io/redis:8
     container_name: pictobattle-redis-dev
+    command: ["redis-server", "/etc/redis/redis.conf", "--appendonly", "yes", "--protected-mode", "no"]
     ports:
       - "6379:6379"
